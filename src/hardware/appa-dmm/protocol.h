@@ -42,100 +42,58 @@
 
 #define LOG_PREFIX "appa-dmm"
 
-/* ******************** */
-/* ****** LEGACY ****** */
-/* ******************** */
-
-/**
- * Packet size for display reading.
- * @WARNING Change once calibration and other frames are in!
- */
 #define APPADMM_PACKET_SIZE 17
-
-/**
- * General comm timeout
- */
+ 
 #define APPPA_B_GENERAL_TIMEOUT 5000
 
-/**
- * Delay before polling
- * @TODO better handling of sample rate possible?
- */
 #define APPADMM_GENERAL_DELAY 5
 
-/**
- * Number of visible displays supported by the interface (main/sub)
- */
 #define APPADMM_DISPLAY_COUNT 2
 
-/**
- * Information structure
- */
-struct appadmm_info {
-  size_t ch_idx; /**< Channel ID (0 == main, 1 == sub) */
-};
+#define APPADMM_CONF_SERIAL "9600/8n1"
 
-extern SR_PRIV const char *sr_appadmm_channel_formats[];
+#define APPADMM_WRITE_BLOCKING_TIMEOUT 5
 
-#ifdef HAVE_SERIAL_COMM
-SR_PRIV int sr_appadmm_serial_open(struct sr_serial_dev_inst *serial);
-SR_PRIV int sr_appadmm_packet_request(struct sr_serial_dev_inst *serial);
-#endif/*HAVE_SERIAL_COMM*/
-SR_PRIV gboolean sr_appadmm_packet_valid(const uint8_t *data);
-SR_PRIV int sr_appadmm_parse(const uint8_t *data, float *val,
-			    struct sr_datafeed_analog *analog, void *info);
-
-/* ************************************ */
-/* ****** Built-in configuration ****** */
-/* ************************************ */
-
-/**
- * Enable flushing before writing
- */
-#define APPADMM_ENABLE_FLUSH 1
-
-/**
- * Enable non blocking writing
- */
-#define APPADMM_ENABLE_NON_BLOCKING 1
-
-/**
- * Enable handshake information from serial
- */
-/* #define APPADMM_ENABLE_OPEN_REQUEST_INFORMATION 1 */
-
-/**
- * Timeout for blocking write operations (10Hz device means max 100ms delay)
- */
-#define APPADMM_WRITE_BLOCKING_TIMEOUT 100
-
-/**
- * Used for unavailable strings and labels
- */
 #define APPADMM_STRING_NA "N/A"
 
-/**
- * String representation of OL on display
- */
 #define APPADMM_READING_TEXT_OL "OL"
 
-/**
- * String name of main display as channel
- */
 #define APPADMM_CHANNEL_NAME_DISPLAY_MAIN "main"
 
-/**
- * String name of sub display as channel
- */
 #define APPADMM_CHANNEL_NAME_DISPLAY_SUB "sub"
 
 #define APPADMM_FRAME_HEADER_SIZE 4
 #define APPADMM_FRAME_CHECKSUM_SIZE 1
+#define APPADMM_FRAME_MAX_DATA_SIZE 64
+#define APPADMM_FRAME_MAX_SIZE (APPADMM_FRAME_MAX_DATA_SIZE+APPADMM_FRAME_HEADER_SIZE+APPADMM_FRAME_CHECKSUM_SIZE)
 
 #define APPADMM_FRAME_DATA_SIZE_REQUEST_READ_INFORMATION 0
 #define APPADMM_FRAME_DATA_SIZE_REQUEST_READ_DISPLAY 0
+#define APPADMM_FRAME_DATA_SIZE_REQUEST_READ_PROTOCOL_VERSION 0
+#define APPADMM_FRAME_DATA_SIZE_REQUEST_READ_BATTERY_LIFE 0
+#define APPADMM_FRAME_DATA_SIZE_REQUEST_WRITE_UART_CONFIGURATION 1
+#define APPADMM_FRAME_DATA_SIZE_REQUEST_CAL_READING 0
+#define APPADMM_FRAME_DATA_SIZE_REQUEST_READ_MEMORY 4
+#define APPADMM_FRAME_DATA_SIZE_REQUEST_READ_HARMONICS_DATA 0
+#define APPADMM_FRAME_DATA_SIZE_REQUEST_CAL_ENTER 0
+#define APPADMM_FRAME_DATA_SIZE_REQUEST_CAL_WRITE_FUNCTION_CODE 1
+#define APPADMM_FRAME_DATA_SIZE_REQUEST_CAL_WRITE_RANGE_CODE 1
+#define APPADMM_FRAME_DATA_SIZE_REQUEST_CAL_WRITE_MEMORY 64 /* variable (max) */
+#define APPADMM_FRAME_DATA_SIZE_REQUEST_CAL_EXIT 0
+#define APPADMM_FRAME_DATA_SIZE_REQUEST_OTA_ENTER 0
+#define APPADMM_FRAME_DATA_SIZE_REQUEST_OTA_SEND_INFORMATION 13
+#define APPADMM_FRAME_DATA_SIZE_REQUEST_OTA_SEND_FIRMWARE_PACKAGE 64 /* variable (max) */
+#define APPADMM_FRAME_DATA_SIZE_REQUEST_OTA_START_UPGRADE_PROCEDURE 1
+
 #define APPADMM_FRAME_DATA_SIZE_RESPONSE_READ_INFORMATION 52
 #define APPADMM_FRAME_DATA_SIZE_RESPONSE_READ_DISPLAY 12
+#define APPADMM_FRAME_DATA_SIZE_RESPONSE_READ_PROTOCOL_VERSION 4
+#define APPADMM_FRAME_DATA_SIZE_RESPONSE_READ_BATTERY_LIFE 4
+#define APPADMM_FRAME_DATA_SIZE_RESPONSE_CAL_READING 23
+#define APPADMM_FRAME_DATA_SIZE_RESPONSE_READ_MEMORY 64 /* variable (max) */
+#define APPADMM_FRAME_DATA_SIZE_RESPONSE_READ_HARMONICS_DATA 50
+#define APPADMM_FRAME_DATA_SIZE_RESPONSE_FAILURE 1
+#define APPADMM_FRAME_DATA_SIZE_RESPONSE_SUCCESS 0
 
 /**
  * Begin of word codes (minimum value)
@@ -156,6 +114,12 @@ SR_PRIV int sr_appadmm_parse(const uint8_t *data, float *val,
 /* ************************** */
 /* ****** Enumerations ****** */
 /* ************************** */
+
+enum appadmm_connection_type_e {
+	APPADMM_CONNECTION_TYPE_INVALID = 0x00,
+	APPADMM_CONNECTION_TYPE_SERIAL = 0x01,
+	APPADMM_CONNECTION_TYPE_BLE = 0x02,
+};
 
 /**
  * Possible commands.
@@ -633,7 +597,10 @@ struct appadmm_display_data_s {
 struct appadmm_frame_header_s {
 	u_int16_t start; /**< Start code (0x5555) */
 	enum appadmm_command_e command; /**< Command */
-	u_int8_t dataLength; /**< Length of Data */
+	uint8_t dataLength; /**< Length of Data */
+};
+
+struct appadmm_request_data_read_information_s {
 };
 
 /**
@@ -646,13 +613,16 @@ struct appadmm_response_data_read_information_s {
 	u_int16_t firmware_version; /*< Firmware version */
 };
 
+struct appadmm_request_data_read_display_s {
+};
+
 /**
  * Response Data for APPADMM_COMMAND_READ_DISPLAY
  */
 struct appadmm_response_data_read_display_s {
 	enum appadmm_functioncode_e function_code; /**< Function Code */
 	enum appadmm_autotest_e auto_test; /**< Auto or manual Test */
-	u_int8_t range_code; /**< @TODO Implement Table 7.1 of protocol spec, only required for calibration */
+	uint8_t range_code; /**< @TODO Implement Table 7.1 of protocol spec, only required for calibration */
 	enum appadmm_autorange_e auto_range; /**< Automatic or manual range */
 
 	struct appadmm_display_data_s main_display_data; /**< Reading of main (lower) display value */
@@ -666,11 +636,15 @@ struct appadmm_frame_s {
 	
 	union {
 		
-		struct {
+		union {
+			
+			struct appadmm_request_data_read_information_s read_information;
+			
+			struct appadmm_request_data_read_display_s read_display;
 			
 		} request;
 		
-		struct {
+		union {
 			
 			struct appadmm_response_data_read_information_s read_information;
 			
@@ -682,99 +656,48 @@ struct appadmm_frame_s {
 	
 };
 
-
-/* *************************** */
-/* ****** Helper macros ****** */
-/* *************************** */
-
-/**
- * Helper to calculate frame payload length without checksum
- *
- * @param arg_data_length Data length of Frame
- * @return Length of payload in bytes without checksum
- */
-#define APPADMM_PAYLOAD_LENGTH(arg_data_length) \
-	(arg_data_length + APPADMM_FRAME_HEADER_SIZE)
-
-/**
- * Helper to calculate frame frame length with checksum
- *
- * @param arg_data_length Data length of Frame
- * @return Length of frame in bytes with checksum
- */
-#define APPADMM_FRAME_LENGTH(arg_data_length) \
-	(arg_data_length + APPADMM_FRAME_HEADER_SIZE + APPADMM_FRAME_CHECKSUM_SIZE)
+struct dev_context {
+	enum appadmm_connection_type_e connection_type;
+	uint8_t recv_buffer[APPADMM_FRAME_MAX_SIZE];
+	uint8_t recv_buffer_len;
+};
 
 /* *********************** */
 /* ****** Functions ****** */
 /* *********************** */
 
-/**
- * Check if reading is wordcode
- *
- * @param arg_wordcode Wordcode value
- * @return TRUE if reading value is a wordcode
- */
 static gboolean appadmm_is_wordcode(const int arg_wordcode);
 
-/**
- * Check if reading is dash-wordcode
- *
- * @param arg_wordcode Wordcode value
- * @return TRUE if reading value is a dash-wordcode
- */
 static gboolean appadmm_is_wordcode_dash(const int arg_wordcode);
 
-/**
- * Model id code to string
- *
- * @param arg_model_id
- * @return String name
- */
 static const char *appadmm_model_id_name(const enum appadmm_model_id_e arg_model_id);
 
-/**
- * Model id code to string
- *
- * @param arg_model_id
- * @return String name
- */
 static const char *appadmm_wordcode_name(const enum appadmm_wordcode_e arg_wordcode);
 
-/**
- * APPA checksum calculation
- *
- * @param argData Data to calculate the checksum for
- * @param argSize Size of data
- * @return Checksum
- */
-static u_int8_t appadmm_checksum(const u_int8_t *arg_data, int arg_size);
+static uint8_t appadmm_checksum(const uint8_t *arg_data, int arg_size);
 
-/**
- * Request Display data from meter
- *
- * @param arg_buf Buffer to write the request to, min size 5
- * @param arg_len Length of buffer
- * @return SR_OK, SR_ERR, etc.
- */
-static int appadmm_send_frame_display_request(u_int8_t *arg_buf, int arg_len);
+static int appadmm_frame_request_size(enum appadmm_command_e arg_command);
 
-/**
- * Recieve Display data from meter
- *
- * @param arg_buf Buffer to read  the frame from
- * @param arg_display_reading Output structure to write the result to
- * @return SR_OK, SR_ERR, etc.
- */
-static int appadmm_recv_frame_display_response(const u_int8_t *arg_buf, struct appadmm_response_data_read_display_s *arg_display_response_data);
+static int appadmm_frame_response_size(enum appadmm_command_e arg_command);
 
-/* ****************************************** */
-/* ************ SIGROK-Interface ************ */
-/* ****************************************** */
+static int appadmm_is_response_frame_data_size_valid(enum appadmm_command_e arg_command, int arg_size);
 
-struct dev_context {
-};
+static int appadmm_is_request_frame_data_size_valid(enum appadmm_command_e arg_command, int arg_size);
 
-SR_PRIV int appa_dmm_receive_data(int fd, int revents, void *cb_data);
+SR_PRIV int appadmm_buffer_reset(struct dev_context *devc);
+
+SR_PRIV int appadmm_send(const struct sr_dev_inst *sdi, const struct appadmm_frame_s *arg_frame);
+
+SR_PRIV int appadmm_process(const struct sr_dev_inst *sdi, const struct appadmm_frame_s *arg_frame);
+
+SR_PRIV int appadmm_receive(int fd, int revents, void *cb_data);
+
+static int appadmm_frame_encode(const struct appadmm_frame_s *arg_frame, uint8_t *arg_out_data, int arg_size, int *arg_out_size);
+
+static int appadmm_frame_decode(const uint8_t *arg_data, int arg_size, struct appadmm_frame_s *arg_out_frame);
+
+SR_PRIV int appadmm_receive(int fd, int revents, void *cb_data);
+
+static int appadmm_response_read_display(const struct sr_dev_inst *sdi, const struct appadmm_response_data_read_display_s *arg_data);
 
 #endif

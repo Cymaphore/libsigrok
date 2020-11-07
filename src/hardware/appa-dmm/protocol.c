@@ -52,9 +52,9 @@ static gboolean appadmm_is_wordcode_dash(const int arg_wordcode)
 		|| arg_wordcode == APPADMM_WORDCODE_DASH2;
 }
 
-static u_int8_t appadmm_checksum(const u_int8_t *arg_data, int arg_size)
+static uint8_t appadmm_checksum(const uint8_t *arg_data, int arg_size)
 {
-	u_int8_t checksum;
+	uint8_t checksum;
 
 	if (arg_data == NULL) {
 		sr_err("appadmm_checksum(): checksum data error, NULL provided. returning 0");
@@ -71,20 +71,274 @@ static u_int8_t appadmm_checksum(const u_int8_t *arg_data, int arg_size)
 static int appadmm_frame_request_size(enum appadmm_command_e arg_command)
 {
 	switch(arg_command) {
+	case APPADMM_COMMAND_READ_INFORMATION:
+		return APPADMM_FRAME_DATA_SIZE_REQUEST_READ_INFORMATION;
 	case APPADMM_COMMAND_READ_DISPLAY:
 		return APPADMM_FRAME_DATA_SIZE_REQUEST_READ_DISPLAY;
+	case APPADMM_COMMAND_READ_PROTOCOL_VERSION:
+		return APPADMM_FRAME_DATA_SIZE_REQUEST_READ_PROTOCOL_VERSION;
+	case APPADMM_COMMAND_READ_BATTERY_LIFE:
+		return APPADMM_FRAME_DATA_SIZE_REQUEST_READ_BATTERY_LIFE;
+	case APPADMM_COMMAND_WRITE_UART_CONFIGURATION:
+		return APPADMM_FRAME_DATA_SIZE_REQUEST_WRITE_UART_CONFIGURATION;
+	case APPADMM_COMMAND_CAL_READING:
+		return APPADMM_FRAME_DATA_SIZE_REQUEST_CAL_READING;
+	case APPADMM_COMMAND_READ_MEMORY:
+		return APPADMM_FRAME_DATA_SIZE_REQUEST_READ_MEMORY;
+	case APPADMM_COMMAND_READ_HARMONICS_DATA:
+		return APPADMM_FRAME_DATA_SIZE_REQUEST_READ_HARMONICS_DATA;
+	case APPADMM_COMMAND_CAL_ENTER:
+		return APPADMM_FRAME_DATA_SIZE_REQUEST_CAL_ENTER;
+	case APPADMM_COMMAND_CAL_WRITE_FUNCTION_CODE:
+		return APPADMM_FRAME_DATA_SIZE_REQUEST_CAL_WRITE_FUNCTION_CODE;
+	case APPADMM_COMMAND_CAL_WRITE_RANGE_CODE:
+		return APPADMM_FRAME_DATA_SIZE_REQUEST_CAL_WRITE_RANGE_CODE;
+	case APPADMM_COMMAND_CAL_WRITE_MEMORY:
+		return APPADMM_FRAME_DATA_SIZE_REQUEST_CAL_WRITE_MEMORY;
+	case APPADMM_COMMAND_CAL_EXIT:
+		return APPADMM_FRAME_DATA_SIZE_REQUEST_CAL_EXIT;
+	case APPADMM_COMMAND_OTA_ENTER:
+		return APPADMM_FRAME_DATA_SIZE_REQUEST_OTA_ENTER;
+	case APPADMM_COMMAND_OTA_SEND_INFORMATION:
+		return APPADMM_FRAME_DATA_SIZE_REQUEST_OTA_SEND_INFORMATION;
+	case APPADMM_COMMAND_OTA_SEND_FIRMWARE_PACKAGE:
+		return APPADMM_FRAME_DATA_SIZE_REQUEST_OTA_SEND_FIRMWARE_PACKAGE;
+	case APPADMM_COMMAND_OTA_START_UPGRADE_PROCEDURE:
+		return APPADMM_FRAME_DATA_SIZE_REQUEST_OTA_START_UPGRADE_PROCEDURE;
+		
+	/* these are responses only */
+	case APPADMM_COMMAND_FAILURE:
+	case APPADMM_COMMAND_SUCCESS:
+		
+	/* safe default */
+	default:
+		return SR_ERR_DATA;
 	}
-	return SR_ERR_DATA;
+	return SR_ERR_BUG;
 }
 
-static int appadmm_frame_encode(const struct appadmm_frame_s *arg_frame, u_int8_t *arg_out_data, int arg_size)
+static int appadmm_frame_response_size(enum appadmm_command_e arg_command)
+{
+	switch(arg_command) {
+	case APPADMM_COMMAND_READ_INFORMATION:
+		return APPADMM_FRAME_DATA_SIZE_RESPONSE_READ_INFORMATION;
+	case APPADMM_COMMAND_READ_DISPLAY:
+		return APPADMM_FRAME_DATA_SIZE_RESPONSE_READ_DISPLAY;
+	case APPADMM_COMMAND_READ_PROTOCOL_VERSION:
+		return APPADMM_FRAME_DATA_SIZE_RESPONSE_READ_PROTOCOL_VERSION;
+	case APPADMM_COMMAND_READ_BATTERY_LIFE:
+		return APPADMM_FRAME_DATA_SIZE_RESPONSE_READ_BATTERY_LIFE;
+	case APPADMM_COMMAND_CAL_READING:
+		return APPADMM_FRAME_DATA_SIZE_RESPONSE_CAL_READING;
+	case APPADMM_COMMAND_READ_MEMORY:
+		return APPADMM_FRAME_DATA_SIZE_RESPONSE_READ_MEMORY;
+	case APPADMM_COMMAND_READ_HARMONICS_DATA:
+		return APPADMM_FRAME_DATA_SIZE_RESPONSE_READ_HARMONICS_DATA;
+	case APPADMM_COMMAND_FAILURE:
+		return APPADMM_FRAME_DATA_SIZE_RESPONSE_FAILURE;
+	case APPADMM_COMMAND_SUCCESS:
+		return APPADMM_FRAME_DATA_SIZE_RESPONSE_SUCCESS;
+		
+	/* these respond with APPADMM_FRAME_DATA_SIZE_RESPONSE_SUCCESS or APPADMM_FRAME_DATA_SIZE_RESPONSE_FAILURE */
+	case APPADMM_COMMAND_WRITE_UART_CONFIGURATION:
+	case APPADMM_COMMAND_CAL_ENTER:
+	case APPADMM_COMMAND_CAL_WRITE_FUNCTION_CODE:
+	case APPADMM_COMMAND_CAL_WRITE_RANGE_CODE:
+	case APPADMM_COMMAND_CAL_WRITE_MEMORY:
+	case APPADMM_COMMAND_CAL_EXIT:
+	case APPADMM_COMMAND_OTA_ENTER:
+	case APPADMM_COMMAND_OTA_SEND_INFORMATION:
+	case APPADMM_COMMAND_OTA_SEND_FIRMWARE_PACKAGE:
+	case APPADMM_COMMAND_OTA_START_UPGRADE_PROCEDURE:
+	
+	/* safe default */
+	default:
+		return SR_ERR_DATA;
+	}
+	return SR_ERR_BUG;
+}
+
+static int appadmm_is_request_frame_data_size_valid(enum appadmm_command_e arg_command, int arg_size)
+{
+	int size;
+	
+	if ((arg_command == APPADMM_FRAME_DATA_SIZE_REQUEST_CAL_WRITE_MEMORY
+		|| arg_command == APPADMM_FRAME_DATA_SIZE_REQUEST_OTA_SEND_FIRMWARE_PACKAGE)
+		&& arg_size > APPADMM_FRAME_MAX_DATA_SIZE)
+		return SR_ERR_DATA;
+	
+	size = appadmm_frame_request_size(arg_command);
+	
+	if (size != arg_size
+		|| size < 0)
+		return SR_ERR_DATA;
+	
+	return SR_OK;
+}
+
+static int appadmm_is_response_frame_data_size_valid(enum appadmm_command_e arg_command, int arg_size)
+{
+	int size;
+	
+	if (arg_command == APPADMM_FRAME_DATA_SIZE_RESPONSE_READ_MEMORY
+		&& arg_size > APPADMM_FRAME_MAX_DATA_SIZE)
+		return SR_ERR_DATA;
+	
+	size = appadmm_frame_response_size(arg_command);
+	
+	if (size != arg_size
+		|| size < 0)
+		return SR_ERR_DATA;
+	
+	return SR_OK;
+}
+
+SR_PRIV int appadmm_buffer_reset(struct dev_context *devc)
+{
+	devc->recv_buffer_len = 0;
+	devc->recv_buffer[0] = 0;
+	devc->recv_buffer[1] = 0;
+	devc->recv_buffer[2] = 0;
+	devc->recv_buffer[3] = 0;
+}
+
+SR_PRIV int appadmm_send(const struct sr_dev_inst *sdi, const struct appadmm_frame_s *arg_frame)
+{
+	struct dev_context *devc;
+	struct sr_serial_dev_inst *serial;
+	int retr;
+	
+	uint8_t buf[APPADMM_FRAME_MAX_SIZE];
+	int len;
+	
+	devc = sdi->priv;
+	serial = sdi->conn;
+	
+	retr = appadmm_frame_encode(arg_frame, buf, sizeof(buf), &len);
+	if (retr < 0)
+		return retr;
+	
+	retr = serial_write_blocking(serial, buf, len, APPADMM_WRITE_BLOCKING_TIMEOUT);
+	
+	return retr;
+}
+
+SR_PRIV int appadmm_process(const struct sr_dev_inst *sdi, const struct appadmm_frame_s *arg_frame) {
+	switch (arg_frame->command) {
+		
+	case APPADMM_COMMAND_READ_DISPLAY:
+		return appadmm_response_read_display(sdi, &arg_frame->response.read_display);
+		
+	case APPADMM_COMMAND_READ_INFORMATION:
+	case APPADMM_COMMAND_READ_PROTOCOL_VERSION:
+	case APPADMM_COMMAND_READ_BATTERY_LIFE:
+	case APPADMM_COMMAND_CAL_READING:
+	case APPADMM_COMMAND_READ_MEMORY:
+	case APPADMM_COMMAND_READ_HARMONICS_DATA:
+	case APPADMM_COMMAND_FAILURE:
+	case APPADMM_COMMAND_SUCCESS:
+	case APPADMM_COMMAND_CAL_ENTER:
+	case APPADMM_COMMAND_CAL_WRITE_FUNCTION_CODE:
+	case APPADMM_COMMAND_CAL_WRITE_RANGE_CODE:
+	case APPADMM_COMMAND_CAL_WRITE_MEMORY:
+	case APPADMM_COMMAND_CAL_EXIT:
+	case APPADMM_COMMAND_OTA_ENTER:
+	case APPADMM_COMMAND_OTA_SEND_INFORMATION:
+	case APPADMM_COMMAND_OTA_SEND_FIRMWARE_PACKAGE:
+	case APPADMM_COMMAND_OTA_START_UPGRADE_PROCEDURE:
+		return SR_ERR_DATA;
+	case APPADMM_COMMAND_WRITE_UART_CONFIGURATION:
+	default:
+		return SR_ERR_DATA;
+		
+	}
+	return SR_ERR_BUG;
+}
+
+SR_PRIV int appadmm_receive(int fd, int revents, void *cb_data)
+{
+	const struct sr_dev_inst *sdi;
+	struct dev_context *devc;
+	struct sr_serial_dev_inst *serial;
+	
+	uint8_t buf[APPADMM_FRAME_MAX_SIZE * 5];
+	struct appadmm_frame_s frame;
+	int len;
+	int retr;
+	int xloop;
+
+	(void)fd;
+	
+	buf[0] = 0;
+	buf[1] = 0;
+	buf[2] = 0;
+	buf[3] = 0;
+
+	if (!(sdi = cb_data))
+		return TRUE;
+
+	if (!(devc = sdi->priv))
+		return TRUE;
+
+	serial = sdi->conn;
+	
+	if (revents == G_IO_IN) {
+		len = serial_read_nonblocking(serial, buf, sizeof(buf));
+		if (len < 0)
+			return len;
+		for (xloop = 0; xloop < len; xloop++) {
+			/* validate header */
+			if (devc->recv_buffer_len < 1) {
+				if (buf[xloop] != APPADMM_FRAME_START_VALUE_BYTE) {
+					continue;
+				}
+			} else if (devc->recv_buffer_len < 2) {
+				if (buf[xloop] != APPADMM_FRAME_START_VALUE_BYTE) {
+					appadmm_buffer_reset(devc);
+					continue;
+				}
+			} else if (devc->recv_buffer_len < 3) {
+				if (appadmm_frame_response_size(buf[xloop]) > -1) {
+					appadmm_buffer_reset(devc);
+					continue;
+				}
+			} else if (devc->recv_buffer_len < 4) {
+				if (appadmm_is_response_frame_data_size_valid(buf[xloop - 1], buf[xloop]) != SR_OK) {
+					appadmm_buffer_reset(devc);
+					continue;
+				}
+			}
+			devc->recv_buffer[devc->recv_buffer_len++] = buf[xloop];
+			if (devc->recv_buffer_len > 4) {
+				if (devc->recv_buffer[3] == devc->recv_buffer_len) {
+					retr = appadmm_frame_decode(devc->recv_buffer, devc->recv_buffer_len, &frame);
+					
+					if(retr == SR_OK) {
+						retr = appadmm_process(sdi, &frame);
+					}
+
+					appadmm_buffer_reset(devc);
+				}
+			}
+			if (devc->recv_buffer_len > APPADMM_FRAME_MAX_SIZE) {
+				/* impossible! get out, garbage! */
+				appadmm_buffer_reset(devc);
+			}
+		}
+	}
+	
+	return SR_OK;
+}
+
+static int appadmm_frame_encode(const struct appadmm_frame_s *arg_frame, uint8_t *arg_out_data, int arg_size, int *arg_out_size)
 {
 	uint8_t *wrptr;
 	
 	int size;
 	
 	if (arg_frame == NULL
-		|| arg_out_data == NULL) {
+		|| arg_out_data == NULL
+		|| arg_out_size == NULL) {
 		sr_err("appadmm_frame_encode(): invalid arguments");
 		return SR_ERR_ARG;
 	}
@@ -118,18 +372,18 @@ static int appadmm_frame_encode(const struct appadmm_frame_s *arg_frame, u_int8_
 	
 	write_u8_inc(&wrptr, appadmm_checksum(arg_out_data, size + APPADMM_FRAME_HEADER_SIZE));
 	
+	*arg_out_size = size + APPADMM_FRAME_HEADER_SIZE + APPADMM_FRAME_CHECKSUM_SIZE;
+	
 	return SR_OK;
 }
 
-static int appadmm_frame_decode(const u_int8_t *arg_data, int arg_size, struct appadmm_frame_s *arg_out_frame)
+static int appadmm_frame_decode(const uint8_t *arg_data, int arg_size, struct appadmm_frame_s *arg_out_frame)
 {
 	const uint8_t *rdptr;
 	uint8_t u8;
 	uint16_t u16;
-	int32_t i32;
 	
 	int size;
-	uint8_t checksum;
 	
 	if (arg_out_frame == NULL
 		|| arg_data == NULL) {
@@ -171,7 +425,7 @@ static int appadmm_frame_decode(const u_int8_t *arg_data, int arg_size, struct a
 		u8 = read_u8_inc(&rdptr);
 		arg_out_frame->response.read_display.main_display_data.dot = u8 & 0x7;
 		arg_out_frame->response.read_display.main_display_data.unit = u8 >> 3;
-		
+		 /* allow overflow by 1 to kill bad frames */
 		u8 = read_u8_inc(&rdptr);
 		arg_out_frame->response.read_display.main_display_data.data_content = u8 & 0x7f;
 		arg_out_frame->response.read_display.main_display_data.overload = u8 >> 7;
@@ -194,7 +448,7 @@ static int appadmm_frame_decode(const u_int8_t *arg_data, int arg_size, struct a
 	}
 	
 	u8 = read_u8_inc(&rdptr);
-	if (u8 != appadmm_checksum(arg_data[0], size + APPADMM_FRAME_HEADER_SIZE))
+	if (u8 != appadmm_checksum(arg_data, size + APPADMM_FRAME_HEADER_SIZE))
 		return SR_ERR_DATA;
 	
 	/** @TODO dump btle extra bytes? */
@@ -202,12 +456,13 @@ static int appadmm_frame_decode(const u_int8_t *arg_data, int arg_size, struct a
 	return SR_OK;
 }
 
+
 /* *************************************** */
 /* ****** Internal Resolving tables ****** */
 /* *************************************** */
 
 static const char *appadmm_model_id_name(const enum appadmm_model_id_e arg_model_id)
-{todo
+{
 	switch (arg_model_id) {
 	case APPADMM_MODEL_ID_INVALID:
 		return APPADMM_STRING_NA;
@@ -382,232 +637,41 @@ static const char *appadmm_wordcode_name(const enum appadmm_wordcode_e arg_wordc
 	return APPADMM_STRING_NA;
 }
 
-/* ********************************************** */
-/* ****** Internal response frame decoding ****** */
-/* ********************************************** */
-
-static int appadmm_send_frame_display_request(u_int8_t *arg_buf, int arg_len)
+static int appadmm_response_read_display(const struct sr_dev_inst *sdi, const struct appadmm_response_data_read_display_s *arg_data)
 {
-	u_int8_t write_pos;
-
-	if (arg_buf == NULL) {
-		sr_err("appadmm_write_frame_display_request(): buffer error");
-		return SR_ERR_ARG;
+	struct sr_datafeed_packet packet;
+	
+	struct sr_datafeed_analog analog;
+	struct sr_analog_encoding encoding;
+	struct sr_analog_meaning meaning;
+	struct sr_analog_spec spec;
+	double val;
+	
+	int retr;
+	
+	(void)val;
+	
+	sr_err("Received: %i", arg_data->main_display_data.reading);
+	
+	retr = SR_OK;
+	
+	retr = sr_analog_init(&analog, &encoding, &meaning, &spec, 0);
+	
+	if(retr != SR_OK)
+		return retr;
+	
+	if (analog.meaning->mq != 0) {
+		packet.type = SR_DF_ANALOG;
+		packet.payload = &analog;
+		sr_session_send(sdi, &packet);
 	}
-
-	if (arg_len < 5) {
-		sr_err("appadmm_write_frame_display_request(): argument error");
-		return SR_ERR_ARG;
-	}
-
-	write_pos = 0;
-
-	arg_buf[write_pos++] = APPADMM_FRAME_START_VALUE_BYTE;
-	arg_buf[write_pos++] = APPADMM_FRAME_START_VALUE_BYTE;
-	arg_buf[write_pos++] = APPADMM_COMMAND_READ_DISPLAY;
-	arg_buf[write_pos++] = 0;
-	arg_buf[write_pos++] = appadmm_checksum(arg_buf, APPADMM_FRAME_HEADER_SIZE);
-
-	return SR_OK;
+	
+	
+	return retr;
 }
 
-static int appadmm_recv_frame_display_response(const u_int8_t *arg_buf, struct appadmm_response_data_read_display_s* arg_display_response_data)
-{
-	u_int8_t read_pos;
-	u_int8_t reading[3];
+#if 0
 
-	if (arg_buf == NULL
-		|| arg_display_response_data == NULL) {
-		sr_err("appadmm_read_frame_display_response(): invalid arguments for function");
-		return SR_ERR;
-	}
-
-	read_pos = 0;
-
-	if (arg_buf[read_pos++] != APPADMM_FRAME_START_VALUE_BYTE
-		|| arg_buf[read_pos++] != APPADMM_FRAME_START_VALUE_BYTE)
-		return SR_ERR_IO;
-
-	if (arg_buf[read_pos++] != APPADMM_COMMAND_READ_DISPLAY)
-		return SR_ERR_IO;
-
-	if (arg_buf[read_pos++] != APPADMM_DATA_LENGTH_RESPONSE_READ_DISPLAY)
-		return SR_ERR_IO;
-
-	arg_display_response_data->function_code = arg_buf[read_pos] & 0x7f;
-	arg_display_response_data->auto_test = arg_buf[read_pos++] >> 7;
-
-	arg_display_response_data->range_code = arg_buf[read_pos] & 0x7f;
-	arg_display_response_data->auto_range = arg_buf[read_pos++] >> 7;
-
-	reading[0] = arg_buf[read_pos++];
-	reading[1] = arg_buf[read_pos++];
-	reading[2] = arg_buf[read_pos++];
-
-	arg_display_response_data->main_display_data.reading =
-		reading[0]
-		| reading[1] << 8
-		| reading[2] << 16
-		| ((reading[2] >> 7 == 1) ? 0xff : 0) << 24;
-
-	arg_display_response_data->main_display_data.dot = arg_buf[read_pos] & 0x7;
-	arg_display_response_data->main_display_data.unit = arg_buf[read_pos++] >> 3;
-
-	arg_display_response_data->main_display_data.data_content = arg_buf[read_pos] & 0x7f;
-	arg_display_response_data->main_display_data.overload = arg_buf[read_pos++] >> 7;
-
-	reading[0] = arg_buf[read_pos++];
-	reading[1] = arg_buf[read_pos++];
-	reading[2] = arg_buf[read_pos++];
-
-	arg_display_response_data->sub_display_data.reading =
-		reading[0]
-		| reading[1] << 8
-		| reading[2] << 16
-		| ((reading[2] >> 7 == 1) ? 0xff : 0) << 24;
-
-	arg_display_response_data->sub_display_data.dot = arg_buf[read_pos] & 0x7;
-	arg_display_response_data->sub_display_data.unit = arg_buf[read_pos++] >> 3;
-
-	arg_display_response_data->sub_display_data.data_content = arg_buf[read_pos] & 0x7f;
-	arg_display_response_data->sub_display_data.overload = arg_buf[read_pos++] >> 7;
-
-	return SR_OK;
-}
-
-/* *************************************************** */
-/* ****** Static tables used from within sigrok ****** */
-/* *************************************************** */
-
-SR_PRIV const char *sr_appadmm_channel_formats[APPADMM_DISPLAY_COUNT] = {
-	APPADMM_CHANNEL_NAME_DISPLAY_MAIN,
-	APPADMM_CHANNEL_NAME_DISPLAY_SUB,
-};
-
-/* ************************************************* */
-/* ****** Functions called from within sigrok ****** */
-/* ************************************************* */
-
-#ifdef HAVE_SERIAL_COMM
-
-/**
- * Request frame from device
- *
- * Response will contain both display readings
- *
- * @param serial Serial data
- * @return @sr_error_code Status code
- */
-SR_PRIV int sr_appadmm_packet_request(struct sr_serial_dev_inst *serial)
-{
-	u_int8_t buf[5];
-
-	if (serial == NULL) {
-		sr_err("sr_appadmm_serial_packet_request(): serial error");
-		return SR_ERR_ARG;
-	}
-
-#ifdef APPADMM_ENABLE_FLUSH
-	if (serial_flush(serial) != SR_OK) {
-		sr_err("sr_appadmm_serial_packet_request(): flush error");
-		return SR_ERR_IO;
-	}
-#endif/*APPADMM_ENABLE_FLUSH*/
-
-	if (appadmm_send_frame_display_request(buf, sizeof(buf)) != SR_OK) {
-		sr_err("sr_appadmm_serial_packet_request(): display_request generation error");
-		return SR_ERR;
-	}
-
-#ifdef APPADMM_ENABLE_NON_BLOCKING
-	if (serial_write_nonblocking(serial, &buf, sizeof(buf)) != sizeof(buf)) {
-		sr_err("sr_appadmm_serial_packet_request(): display_request write error");
-		return SR_ERR_IO;
-	}
-#else/*APPADMM_ENABLE_NON_BLOCKING*/
-	if (serial_write_blocking(serial, &buf, sizeof(buf), APPADMM_WRITE_BLOCKING_TIMEOUT) != sizeof(buf)) {
-		sr_err("sr_appadmm_serial_packet_request(): display_request write error");
-		return SR_ERR_IO;
-	}
-#endif/*APPADMM_ENABLE_NON_BLOCKING*/
-
-	return SR_OK;
-}
-
-#endif/*HAVE_SERIAL_COMM*/
-
-/**
- * Validate APPA-Frame
- *
- * @param state session state
- * @param data data recieved
- * @param dlen reported length
- * @param pkt_len return length
- * @return TRUE if checksum is fine
- */
-SR_PRIV gboolean sr_appadmm_packet_valid(const uint8_t *data)
-{
-	int frame_length;
-	u_int8_t checksum;
-
-	if (data == NULL) {
-		sr_err("sr_appadmm_packet_valid(): data error");
-		return FALSE;
-	}
-
-	if (data[0] != APPADMM_FRAME_START_VALUE_BYTE
-		|| data[1] != APPADMM_FRAME_START_VALUE_BYTE)
-		return FALSE;
-	
-	switch (data[]) {
-	
-	/* Currently implemented (valid) commands */
-	case APPADMM_COMMAND_READ_DISPLAY:
-		break;
-
-	/* Currently unimplemented (invalid) commands */
-	default:
-	case APPADMM_COMMAND_READ_INFORMATION:
-	case APPADMM_COMMAND_READ_PROTOCOL_VERSION:
-	case APPADMM_COMMAND_READ_BATTERY_LIFE:
-	case APPADMM_COMMAND_WRITE_UART_CONFIGURATION:
-	case APPADMM_COMMAND_CAL_READING:
-	case APPADMM_COMMAND_READ_MEMORY:
-	case APPADMM_COMMAND_READ_HARMONICS_DATA:
-	case APPADMM_COMMAND_FAILURE:
-	case APPADMM_COMMAND_SUCCESS:
-	case APPADMM_COMMAND_CAL_ENTER:
-	case APPADMM_COMMAND_CAL_WRITE_FUNCTION_CODE:
-	case APPADMM_COMMAND_CAL_WRITE_RANGE_CODE:
-	case APPADMM_COMMAND_CAL_WRITE_MEMORY:
-	case APPADMM_COMMAND_CAL_EXIT:
-	case APPADMM_COMMAND_OTA_ENTER:
-	case APPADMM_COMMAND_OTA_SEND_INFORMATION:
-	case APPADMM_COMMAND_OTA_SEND_FIRMWARE_PACKAGE:
-	case APPADMM_COMMAND_OTA_START_UPGRADE_PROCEDURE:
-		return FALSE;
-	}
-
-	frame_length = APPADMM_PAYLOAD_LENGTH(data[3]);
-	checksum = appadmm_checksum(data, frame_length);
-	
-	if (checksum != data[frame_length])
-		return FALSE;
-	
-	return TRUE;
-}
-
-/**
- * Parse APPA-Frame and assign values to virtual channels
- *
- * @TODO include display reading as debug output?
- *
- * @param buf Buffer from Serial or BTLE
- * @param floatval Return display reading
- * @param analog Metadata of the reading
- * @param info Channel information and other things
- * @return @sr_error_code Status
- */
 SR_PRIV int sr_appadmm_parse(const uint8_t *data, float *val,
 			    struct sr_datafeed_analog *analog, void *info)
 {
@@ -1109,26 +1173,4 @@ SR_PRIV int sr_appadmm_parse(const uint8_t *data, float *val,
 	return SR_OK;
 }
 
-/* ****************************************** */
-/* ************ SIGROK-Interface ************ */
-/* ****************************************** */
-
-SR_PRIV int appa_dmm_receive_data(int fd, int revents, void *cb_data)
-{
-	const struct sr_dev_inst *sdi;
-	struct dev_context *devc;
-
-	(void)fd;
-
-	if (!(sdi = cb_data))
-		return TRUE;
-
-	if (!(devc = sdi->priv))
-		return TRUE;
-
-	if (revents == G_IO_IN) {
-		/* TODO */
-	}
-
-	return TRUE;
-}
+#endif//1|0

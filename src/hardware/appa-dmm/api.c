@@ -19,6 +19,7 @@
 
 #include <config.h>
 #include "protocol.h"
+#include "scpi/vxi.h"
 
 static const uint32_t scanopts[] = {
 	SR_CONF_CONN,
@@ -40,17 +41,56 @@ static struct sr_dev_driver appa_dmm_driver_info;
 static GSList *scan(struct sr_dev_driver *di, GSList *options)
 {
 	struct drv_context *drvc;
+	struct dev_context *context;
 	GSList *devices;
-
-	(void)options;
+	const char *conn;
+	const char *serialcomm;
+	struct sr_serial_dev_inst *serial;
+	
+	GSList *it;
+	struct sr_config *src;
 
 	devices = NULL;
 	drvc = di->context;
 	drvc->instances = NULL;
 
-	/* TODO: scan for devices, either based on a SR_CONF_CONN option
-	 * or on a USB scan. */
+	for (it = options; it; it = it->next) {
+		src = it->data;
+		switch (src->key) {
+		case SR_CONF_CONN:
+			conn = g_variant_get_string(src->data, NULL);
+			break;
+		case SR_CONF_SERIALCOMM:
+			serialcomm = g_variant_get_string(src->data, NULL);
+			break;
+		}
+	}
+	if (!conn)
+		return NULL;
+	if (!serialcomm)
+		serialcomm = APPADMM_CONF_SERIAL;
+	context->connection_type = APPADMM_CONNECTION_TYPE_SERIAL;
+	if (conn != NULL)
+		if (strncmp(conn, "bt/", 3) == 0)
+			context->connection_type = APPADMM_CONNECTION_TYPE_BLE;
 
+	serial = sr_serial_dev_inst_new(conn, serialcomm);
+	
+	if (serial_open(serial, SERIAL_RDWR) != SR_OK)
+		return NULL;
+	
+	sr_info("Testing port %s...", conn);
+
+	struct appadmm_frame_s frame;
+	frame.command = APPADMM_COMMAND_READ_DISPLAY;
+	appadmm_send(serial, &frame);
+	
+	usleep(10000);
+	
+	appadmm_receive(0, G_IO_IN, di);
+	
+	devices = NULL;
+	
 	return devices;
 }
 
