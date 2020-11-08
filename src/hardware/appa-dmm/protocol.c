@@ -45,8 +45,6 @@ static gboolean appadmm_is_wordcode(const int arg_wordcode);
 
 static gboolean appadmm_is_wordcode_dash(const int arg_wordcode);
 
-static const char *appadmm_model_id_name(const enum appadmm_model_id_e arg_model_id);
-
 static const char *appadmm_wordcode_name(const enum appadmm_wordcode_e arg_wordcode);
 
 static uint8_t appadmm_checksum(const uint8_t *arg_data, int arg_size);
@@ -598,7 +596,7 @@ static int appadmm_frame_decode(const uint8_t *arg_data, int arg_size, struct ap
 /* ****** Internal Resolving tables ****** */
 /* *************************************** */
 
-static const char *appadmm_model_id_name(const enum appadmm_model_id_e arg_model_id)
+SR_PRIV const char *appadmm_model_id_name(const enum appadmm_model_id_e arg_model_id)
 {
 	switch (arg_model_id) {
 	case APPADMM_MODEL_ID_INVALID:
@@ -779,8 +777,8 @@ SR_PRIV const char *appadmm_channel_name(const enum appadmm_channel_e arg_channe
 	switch (arg_channel) {
 	case APPADMM_CHANNEL_INVALID:
 		return APPADMM_STRING_NA;
-	case APPADMM_CHANNEL_TIMESTAMP:
-		return "timestamp";
+	//case APPADMM_CHANNEL_TIMESTAMP:
+	//	return "timestamp";
 	case APPADMM_CHANNEL_MAIN:
 		return "main";
 	case APPADMM_CHANNEL_SUB:
@@ -818,7 +816,10 @@ static int appadmm_response_read_information(const struct sr_dev_inst *sdi, cons
 	sdi_w->version = g_strdup_printf("%01d.%02d",
 		arg_data->firmware_version / 100,
 		arg_data->firmware_version % 100);
+	
 	devc->model_id = arg_data->model_id;
+	
+	sdi_w->serial_num = g_strdup(arg_data->serial_number);
 	
 	retr = SR_OK;
 	
@@ -834,7 +835,7 @@ static int appadmm_transform_display_data(const struct sr_dev_inst *sdi, enum ap
 	struct sr_analog_meaning meaning;
 	struct sr_analog_spec spec;
 	struct sr_channel *channel;
-	double val;
+	float val;
 	
 	int retr;
 	
@@ -1328,10 +1329,12 @@ static int appadmm_transform_display_data(const struct sr_dev_inst *sdi, enum ap
 		
 		break;
 		
+#if 0
 	case APPADMM_CHANNEL_TIMESTAMP:
 		/** @TODO IMPLEMENT */
 		return SR_OK;
 		break;
+#endif//1|0
 	}
 	
 	if (analog.meaning->mq != 0) {
@@ -1348,15 +1351,16 @@ static int appadmm_transform_display_data(const struct sr_dev_inst *sdi, enum ap
 	return retr;
 	
 }
+
 static int appadmm_response_read_display(const struct sr_dev_inst *sdi, const struct appadmm_response_data_read_display_s *arg_data)
 {
 	int retr;
 	
 	retr = SR_OK;
 	
-	retr = appadmm_transform_display_data(sdi, APPADMM_CHANNEL_TIMESTAMP, arg_data);
-	if(retr != SR_OK)
-		return retr;
+//	retr = appadmm_transform_display_data(sdi, APPADMM_CHANNEL_TIMESTAMP, arg_data);
+//	if(retr != SR_OK)
+//		return retr;
 
 	retr = appadmm_transform_display_data(sdi, APPADMM_CHANNEL_MAIN, arg_data);
 	if(retr != SR_OK)

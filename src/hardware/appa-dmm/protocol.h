@@ -127,9 +127,9 @@ enum appadmm_frame_type_e {
 
 enum appadmm_channel_e {
 	APPADMM_CHANNEL_INVALID = -1,
-	APPADMM_CHANNEL_TIMESTAMP = 0x00,
-	APPADMM_CHANNEL_MAIN = 0x01,
-	APPADMM_CHANNEL_SUB = 0x02,
+	//APPADMM_CHANNEL_TIMESTAMP = 0x00,
+	APPADMM_CHANNEL_MAIN = 0x00,
+	APPADMM_CHANNEL_SUB = 0x01,
 };
 
 /**
@@ -688,5 +688,7 @@ SR_PRIV int appadmm_receive(const struct sr_dev_inst *sdi, gboolean arg_is_block
 SR_PRIV int appadmm_send(const struct sr_dev_inst *sdi, const struct appadmm_frame_s *arg_frame);
 
 SR_PRIV const char *appadmm_channel_name(const enum appadmm_channel_e arg_channel);
+
+SR_PRIV const char *appadmm_model_id_name(const enum appadmm_model_id_e arg_model_id);
 
 #endif

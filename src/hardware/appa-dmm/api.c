@@ -32,8 +32,8 @@ static const uint32_t drvopts[] = {
 
 static const uint32_t devopts[] = {
 	SR_CONF_CONTINUOUS,
-	SR_CONF_SAMPLERATE | SR_CONF_GET | SR_CONF_SET | SR_CONF_LIST,
-	SR_CONF_DATA_SOURCE | SR_CONF_GET | SR_CONF_SET | SR_CONF_LIST,
+	SR_CONF_LIMIT_SAMPLES | SR_CONF_GET | SR_CONF_SET,
+	SR_CONF_LIMIT_MSEC | SR_CONF_GET | SR_CONF_SET,
 };
 
 static struct sr_dev_driver appa_dmm_driver_info;
@@ -112,19 +112,21 @@ static GSList *scan(struct sr_dev_driver *di, GSList *options)
 	};
 	
 	if (devc->model_id == APPADMM_MODEL_ID_INVALID) {
-		sr_err("No valid response to read_information request.");
+		sr_err("APPA-Device NOT FOUND; No valid response to read_information request.");
 		sr_serial_dev_inst_free(serial);
 		serial_close(serial);
 		return NULL;
 	}
 	
-	sr_err("APPA-Device detected; Vendor: %s, Model: %s, Version: %s, Model ID: %i",
+	sr_warn("APPA-Device DETECTED; Vendor: %s, Model: %s, APPA-Model: %s, Version: %s, Serial number: %s, Model ID: %i",
 		sdi->vendor,
 		sdi->model,
+		appadmm_model_id_name(devc->model_id),
 		sdi->version,
+		sdi->serial_num,
 		devc->model_id);
 	
-	sr_channel_new(sdi, APPADMM_CHANNEL_TIMESTAMP, SR_CHANNEL_ANALOG, TRUE, appadmm_channel_name(APPADMM_CHANNEL_TIMESTAMP));
+	//sr_channel_new(sdi, APPADMM_CHANNEL_TIMESTAMP, SR_CHANNEL_ANALOG, TRUE, appadmm_channel_name(APPADMM_CHANNEL_TIMESTAMP));
 	sr_channel_new(sdi, APPADMM_CHANNEL_MAIN, SR_CHANNEL_ANALOG, TRUE, appadmm_channel_name(APPADMM_CHANNEL_MAIN));
 	sr_channel_new(sdi, APPADMM_CHANNEL_SUB, SR_CHANNEL_ANALOG, TRUE, appadmm_channel_name(APPADMM_CHANNEL_SUB));
 	
