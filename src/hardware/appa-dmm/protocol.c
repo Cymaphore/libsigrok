@@ -35,6 +35,45 @@
 #include <config.h>
 #include "protocol.h"
 
+#include <math.h>
+
+/* ******************************** */
+/* ****** Internal Functions ****** */
+/* ******************************** */
+
+static gboolean appadmm_is_wordcode(const int arg_wordcode);
+
+static gboolean appadmm_is_wordcode_dash(const int arg_wordcode);
+
+static const char *appadmm_model_id_name(const enum appadmm_model_id_e arg_model_id);
+
+static const char *appadmm_wordcode_name(const enum appadmm_wordcode_e arg_wordcode);
+
+static uint8_t appadmm_checksum(const uint8_t *arg_data, int arg_size);
+
+static int appadmm_frame_request_size(enum appadmm_command_e arg_command);
+
+static int appadmm_frame_response_size(enum appadmm_command_e arg_command);
+
+static int appadmm_is_response_frame_data_size_valid(enum appadmm_command_e arg_command, int arg_size);
+
+static int appadmm_is_request_frame_data_size_valid(enum appadmm_command_e arg_command, int arg_size);
+
+static int appadmm_buffer_reset(struct dev_context *devc);
+
+static int appadmm_process(const struct sr_dev_inst *sdi, const struct appadmm_frame_s *arg_frame);
+
+static int appadmm_frame_encode(const struct appadmm_frame_s *arg_frame, uint8_t *arg_out_data, int arg_size, int *arg_out_size);
+
+static int appadmm_frame_decode_read_information(const uint8_t **rdptr, struct appadmm_response_data_read_information_s* arg_data);
+static int appadmm_frame_decode_read_display(const uint8_t **rdptr, struct appadmm_response_data_read_display_s* arg_data);
+
+static int appadmm_frame_decode(const uint8_t *arg_data, int arg_size, struct appadmm_frame_s *arg_out_frame);
+
+static int appadmm_response_read_information(const struct sr_dev_inst *sdi, const struct appadmm_response_data_read_information_s *arg_data);
+
+static int appadmm_response_read_display(const struct sr_dev_inst *sdi, const struct appadmm_response_data_read_display_s *arg_data);
+
 /* *************************************** */
 /* ****** Internal Helper Functions ****** */
 /* *************************************** */
@@ -180,7 +219,7 @@ static int appadmm_is_response_frame_data_size_valid(enum appadmm_command_e arg_
 {
 	int size;
 	
-	if (arg_command == APPADMM_FRAME_DATA_SIZE_RESPONSE_READ_MEMORY
+	if (arg_command == APPADMM_COMMAND_READ_MEMORY
 		&& arg_size > APPADMM_FRAME_MAX_DATA_SIZE)
 		return SR_ERR_DATA;
 	
@@ -193,13 +232,14 @@ static int appadmm_is_response_frame_data_size_valid(enum appadmm_command_e arg_
 	return SR_OK;
 }
 
-SR_PRIV int appadmm_buffer_reset(struct dev_context *devc)
+static int appadmm_buffer_reset(struct dev_context *devc)
 {
 	devc->recv_buffer_len = 0;
 	devc->recv_buffer[0] = 0;
 	devc->recv_buffer[1] = 0;
 	devc->recv_buffer[2] = 0;
 	devc->recv_buffer[3] = 0;
+	return SR_OK;
 }
 
 SR_PRIV int appadmm_send(const struct sr_dev_inst *sdi, const struct appadmm_frame_s *arg_frame)
@@ -220,10 +260,23 @@ SR_PRIV int appadmm_send(const struct sr_dev_inst *sdi, const struct appadmm_fra
 	
 	retr = serial_write_blocking(serial, buf, len, APPADMM_WRITE_BLOCKING_TIMEOUT);
 	
+	if (retr == len)
+		retr = SR_OK;
+	else
+		retr = SR_ERR_IO;
+	
 	return retr;
 }
 
-SR_PRIV int appadmm_process(const struct sr_dev_inst *sdi, const struct appadmm_frame_s *arg_frame) {
+static int appadmm_process(const struct sr_dev_inst *sdi, const struct appadmm_frame_s *arg_frame)
+{
+	struct dev_context *devc;
+	
+	if (!(devc = sdi->priv))
+		return SR_ERR_ARG;
+	
+	devc->request_active = FALSE;
+
 	switch (arg_frame->command) {
 		
 	case APPADMM_COMMAND_READ_INFORMATION:
@@ -257,9 +310,38 @@ SR_PRIV int appadmm_process(const struct sr_dev_inst *sdi, const struct appadmm_
 	return SR_ERR_BUG;
 }
 
-SR_PRIV int appadmm_receive(int fd, int revents, void *cb_data)
+SR_PRIV int appadmm_receive_serial(int fd, int revents, void *cb_data)
 {
-	const struct sr_dev_inst *sdi;
+	struct dev_context *devc;
+	struct sr_dev_inst *sdi;
+	struct appadmm_frame_s frame;
+	
+	(void)fd;
+	
+	if (!(sdi = cb_data))
+		return FALSE;
+	if (!(devc = sdi->priv))
+		return FALSE;
+	
+	if (revents == G_IO_IN) {
+		appadmm_receive(sdi, FALSE);
+	} else {
+		if (!devc->request_active) {
+			frame.command = APPADMM_COMMAND_READ_DISPLAY;
+			if (appadmm_send(sdi, &frame) != SR_OK)
+				return FALSE;
+			devc->request_active = TRUE;
+		}
+	}
+	
+	if (sr_sw_limits_check(&devc->limits))
+		return sr_dev_acquisition_stop(sdi) == SR_OK;
+	
+	return TRUE;
+}
+
+SR_PRIV int appadmm_receive(const struct sr_dev_inst *sdi, gboolean arg_is_blocking)
+{
 	struct dev_context *devc;
 	struct sr_serial_dev_inst *serial;
 	
@@ -269,69 +351,61 @@ SR_PRIV int appadmm_receive(int fd, int revents, void *cb_data)
 	int retr;
 	int xloop;
 
-	(void)fd;
-	
 	buf[0] = 0;
 	buf[1] = 0;
 	buf[2] = 0;
 	buf[3] = 0;
-
-	if (!(sdi = cb_data))
-		return SR_ERR_ARG;
 
 	if (!(devc = sdi->priv))
 		return SR_ERR_ARG;
 
 	serial = sdi->conn;
 	
-	if (revents == G_IO_IN) {
-		if (devc->blocking)
-			len = serial_read_blocking(serial, buf, sizeof(buf), 150);
-		else
-			len = serial_read_nonblocking(serial, buf, sizeof(buf));
-		if (len < 0)
-			return len;
-		for (xloop = 0; xloop < len; xloop++) {
-			/* validate header */
-			if (devc->recv_buffer_len < 1) {
-				if (buf[xloop] != APPADMM_FRAME_START_VALUE_BYTE) {
-					continue;
-				}
-			} else if (devc->recv_buffer_len < 2) {
-				if (buf[xloop] != APPADMM_FRAME_START_VALUE_BYTE) {
-					appadmm_buffer_reset(devc);
-					continue;
-				}
-			} else if (devc->recv_buffer_len < 3) {
-				if (appadmm_frame_response_size(buf[xloop]) < 0) {
-					appadmm_buffer_reset(devc);
-					continue;
-				}
-				sr_err("~~~~~~~~~ COMMAND RESPONSE: %i", (int)buf[xloop]);
-			} else if (devc->recv_buffer_len < 4) {
-				if (appadmm_is_response_frame_data_size_valid(buf[xloop - 1], buf[xloop]) != SR_OK) {
-					appadmm_buffer_reset(devc);
-					continue;
-				}
+	if (arg_is_blocking)
+		len = serial_read_blocking(serial, buf, sizeof(buf), APPADMM_READ_BLOCKING_TIMEOUT);
+	else
+		len = serial_read_nonblocking(serial, buf, sizeof(buf));
+	if (len < 0)
+		return len;
+	
+	for (xloop = 0; xloop < len; xloop++) {
+		/* validate header */
+		if (devc->recv_buffer_len < 1) {
+			if (buf[xloop] != APPADMM_FRAME_START_VALUE_BYTE) {
+				continue;
 			}
-			devc->recv_buffer[devc->recv_buffer_len++] = buf[xloop];
-			if (devc->recv_buffer_len > 4) {
-				if (devc->recv_buffer[3] + APPADMM_FRAME_HEADER_SIZE + APPADMM_FRAME_CHECKSUM_SIZE == devc->recv_buffer_len) {
-					sr_err("DECODING COMMAND FRAME");
-					retr = appadmm_frame_decode(devc->recv_buffer, devc->recv_buffer_len, &frame);
-					
-					if(retr == SR_OK) {
-						sr_err("PROCESSING COMMAND FRAME");
-						retr = appadmm_process(sdi, &frame);
-					}
+		} else if (devc->recv_buffer_len < 2) {
+			if (buf[xloop] != APPADMM_FRAME_START_VALUE_BYTE) {
+				appadmm_buffer_reset(devc);
+				continue;
+			}
+		} else if (devc->recv_buffer_len < 3) {
+			if (appadmm_frame_response_size(buf[xloop]) < 0) {
+				appadmm_buffer_reset(devc);
+				continue;
+			}
+		} else if (devc->recv_buffer_len < 4) {
+			if (appadmm_is_response_frame_data_size_valid(devc->recv_buffer[devc->recv_buffer_len - 1], buf[xloop]) != SR_OK) {
+				appadmm_buffer_reset(devc);
+				continue;
+			}
+		}
+		devc->recv_buffer[devc->recv_buffer_len++] = buf[xloop];
+		if (devc->recv_buffer_len > 4) {
+			if (devc->recv_buffer[3] + APPADMM_FRAME_HEADER_SIZE + APPADMM_FRAME_CHECKSUM_SIZE == devc->recv_buffer_len) {
+				
+				retr = appadmm_frame_decode(devc->recv_buffer, devc->recv_buffer_len, &frame);
 
-					appadmm_buffer_reset(devc);
+				if(retr == SR_OK) {
+					retr = appadmm_process(sdi, &frame);
 				}
-			}
-			if (devc->recv_buffer_len > APPADMM_FRAME_MAX_SIZE) {
-				/* impossible! get out, garbage! */
+
 				appadmm_buffer_reset(devc);
 			}
+		}
+		if (devc->recv_buffer_len > APPADMM_FRAME_MAX_SIZE) {
+			/* impossible! get out, garbage! */
+			appadmm_buffer_reset(devc);
 		}
 	}
 	
@@ -700,6 +774,23 @@ static const char *appadmm_wordcode_name(const enum appadmm_wordcode_e arg_wordc
 	return APPADMM_STRING_NA;
 }
 
+SR_PRIV const char *appadmm_channel_name(const enum appadmm_channel_e arg_channel)
+{
+	switch (arg_channel) {
+	case APPADMM_CHANNEL_INVALID:
+		return APPADMM_STRING_NA;
+	case APPADMM_CHANNEL_TIMESTAMP:
+		return "timestamp";
+	case APPADMM_CHANNEL_MAIN:
+		return "main";
+	case APPADMM_CHANNEL_SUB:
+		return "sub";
+	}
+	
+	return APPADMM_STRING_NA;
+}
+
+
 static int appadmm_response_read_information(const struct sr_dev_inst *sdi, const struct appadmm_response_data_read_information_s *arg_data)
 {
 	struct dev_context *devc;
@@ -734,7 +825,7 @@ static int appadmm_response_read_information(const struct sr_dev_inst *sdi, cons
 	return retr;
 }
 
-static int appadmm_response_read_display(const struct sr_dev_inst *sdi, const struct appadmm_response_data_read_display_s *arg_data)
+static int appadmm_transform_display_data(const struct sr_dev_inst *sdi, enum appadmm_channel_e arg_channel, const struct appadmm_response_data_read_display_s *arg_data)
 {
 	struct sr_datafeed_packet packet;
 	
@@ -742,532 +833,538 @@ static int appadmm_response_read_display(const struct sr_dev_inst *sdi, const st
 	struct sr_analog_encoding encoding;
 	struct sr_analog_meaning meaning;
 	struct sr_analog_spec spec;
+	struct sr_channel *channel;
 	double val;
 	
 	int retr;
 	
-	(void)val;
-	
-	sr_err("Received: %i", arg_data->main_display_data.reading);
+	gboolean is_dash;
+	double unit_factor;
+	double display_reading_value;
+	int8_t digits;
+	const struct appadmm_display_data_s *display_data;
 	
 	retr = SR_OK;
 	
 	retr = sr_analog_init(&analog, &encoding, &meaning, &spec, 0);
+	val = 0;
 	
 	if(retr != SR_OK)
 		return retr;
 	
+	switch (arg_channel) {
+	
+	case APPADMM_CHANNEL_INVALID:
+		return SR_ERR_BUG;
+		
+	case APPADMM_CHANNEL_MAIN:
+	case APPADMM_CHANNEL_SUB:
+		
+		if (arg_channel == APPADMM_CHANNEL_MAIN)
+			display_data = &arg_data->main_display_data;
+		else
+			display_data = &arg_data->sub_display_data;
+
+		unit_factor = 1;
+		digits = 0;
+
+		display_reading_value = (double) display_data->reading;
+
+		is_dash = appadmm_is_wordcode_dash(display_data->reading);
+
+		if (!appadmm_is_wordcode(display_data->reading)
+			|| is_dash) {
+
+			switch (display_data->dot) {
+
+			default:
+			case APPADMM_DOT_NONE:
+				digits = 0;
+				unit_factor /= 1;
+				break;
+
+			case APPADMM_DOT_9999_9:
+				digits = 1;
+				unit_factor /= 10;
+				break;
+
+			case APPADMM_DOT_999_99:
+				digits = 2;
+				unit_factor /= 100;
+				break;
+
+			case APPADMM_DOT_99_999:
+				digits = 3;
+				unit_factor /= 1000;
+				break;
+
+			case APPADMM_DOT_9_9999:
+				digits = 4;
+				unit_factor /= 10000;
+				break;
+
+			}
+
+			switch (display_data->data_content) {
+
+			case APPADMM_DATA_CONTENT_MAXIMUM:
+				analog.meaning->mqflags |= SR_MQFLAG_MAX;
+				break;
+
+			case APPADMM_DATA_CONTENT_MINIMUM:
+				analog.meaning->mqflags |= SR_MQFLAG_MIN;
+				break;
+
+			case APPADMM_DATA_CONTENT_AVERAGE:
+				analog.meaning->mqflags |= SR_MQFLAG_AVG;
+				break;
+
+			case APPADMM_DATA_CONTENT_PEAK_HOLD_MAX:
+				analog.meaning->mqflags |= SR_MQFLAG_MAX;
+				if (arg_channel == APPADMM_CHANNEL_SUB)
+					analog.meaning->mqflags |= SR_MQFLAG_HOLD;
+				break;
+
+			case APPADMM_DATA_CONTENT_PEAK_HOLD_MIN:
+				analog.meaning->mqflags |= SR_MQFLAG_MIN;
+				if (arg_channel == APPADMM_CHANNEL_SUB)
+					analog.meaning->mqflags |= SR_MQFLAG_HOLD;
+				break;
+
+			case APPADMM_DATA_CONTENT_AUTO_HOLD:
+				if (arg_channel == APPADMM_CHANNEL_SUB)
+					analog.meaning->mqflags |= SR_MQFLAG_HOLD;
+				break;
+
+			case APPADMM_DATA_CONTENT_HOLD:
+				if (arg_channel == APPADMM_CHANNEL_SUB)
+					analog.meaning->mqflags |= SR_MQFLAG_HOLD;
+				break;
+
+			case APPADMM_DATA_CONTENT_REL_DELTA:
+			case APPADMM_DATA_CONTENT_REL_PERCENT:
+				if (arg_channel != APPADMM_CHANNEL_SUB)
+					analog.meaning->mqflags |= SR_MQFLAG_RELATIVE;
+				else
+					analog.meaning->mqflags |= SR_MQFLAG_REFERENCE;
+				break;
+
+			default:
+			case APPADMM_DATA_CONTENT_FREQUENCY:
+			case APPADMM_DATA_CONTENT_CYCLE:
+			case APPADMM_DATA_CONTENT_DUTY:
+			case APPADMM_DATA_CONTENT_MEMORY_STAMP:
+			case APPADMM_DATA_CONTENT_MEMORY_SAVE:
+			case APPADMM_DATA_CONTENT_MEMORY_LOAD:
+			case APPADMM_DATA_CONTENT_LOG_SAVE:
+			case APPADMM_DATA_CONTENT_LOG_LOAD:
+			case APPADMM_DATA_CONTENT_LOG_RATE:
+			case APPADMM_DATA_CONTENT_REL_REFERENCE:
+			case APPADMM_DATA_CONTENT_DBM:
+			case APPADMM_DATA_CONTENT_DB:
+			case APPADMM_DATA_CONTENT_SETUP:
+			case APPADMM_DATA_CONTENT_LOG_STAMP:
+			case APPADMM_DATA_CONTENT_LOG_MAX:
+			case APPADMM_DATA_CONTENT_LOG_MIN:
+			case APPADMM_DATA_CONTENT_LOG_TP:
+			case APPADMM_DATA_CONTENT_CURRENT_OUTPUT:
+			case APPADMM_DATA_CONTENT_CUR_OUT_0_20MA_PERCENT:
+			case APPADMM_DATA_CONTENT_CUR_OUT_4_20MA_PERCENT:
+				break;
+
+			}
+
+			if (arg_data->auto_range == APPADMM_AUTO_RANGE) {
+
+				analog.meaning->mqflags |= SR_MQFLAG_AUTORANGE;
+
+			}
+
+			switch (display_data->unit) {
+
+			default: case APPADMM_UNIT_NONE:
+				analog.meaning->unit = SR_UNIT_UNITLESS;
+				break;
+
+			case APPADMM_UNIT_MV:
+				analog.meaning->unit = SR_UNIT_VOLT;
+				analog.meaning->mq = SR_MQ_VOLTAGE;
+				unit_factor /= 1000;
+				digits += 3;
+				break;
+
+			case APPADMM_UNIT_V:
+				analog.meaning->unit = SR_UNIT_VOLT;
+				analog.meaning->mq = SR_MQ_VOLTAGE;
+				break;
+
+			case APPADMM_UNIT_UA:
+				analog.meaning->unit = SR_UNIT_AMPERE;
+				analog.meaning->mq = SR_MQ_CURRENT;
+				unit_factor /= 1000000;
+				digits += 6;
+				break;
+			case APPADMM_UNIT_MA:
+				analog.meaning->unit = SR_UNIT_AMPERE;
+				analog.meaning->mq = SR_MQ_CURRENT;
+				unit_factor /= 1000;
+				digits += 3;
+				break;
+
+			case APPADMM_UNIT_A:
+				analog.meaning->unit = SR_UNIT_AMPERE;
+				analog.meaning->mq = SR_MQ_CURRENT;
+				break;
+
+			case APPADMM_UNIT_DB:
+				analog.meaning->unit = SR_UNIT_DECIBEL_VOLT;
+				analog.meaning->mq = SR_MQ_POWER;
+				break;
+
+			case APPADMM_UNIT_DBM:
+				analog.meaning->unit = SR_UNIT_DECIBEL_MW;
+				analog.meaning->mq = SR_MQ_POWER;
+				break;
+
+			case APPADMM_UNIT_NF:
+				analog.meaning->unit = SR_UNIT_FARAD;
+				analog.meaning->mq = SR_MQ_CAPACITANCE;
+				unit_factor /= 1000000000;
+				digits += 9;
+				break;
+
+			case APPADMM_UNIT_UF:
+				analog.meaning->unit = SR_UNIT_FARAD;
+				analog.meaning->mq = SR_MQ_CAPACITANCE;
+				unit_factor /= 1000000;
+				digits += 6;
+				break;
+
+			case APPADMM_UNIT_MF:
+				analog.meaning->unit = SR_UNIT_FARAD;
+				analog.meaning->mq = SR_MQ_CAPACITANCE;
+				unit_factor /= 1000;
+				digits += 3;
+				break;
+
+			case APPADMM_UNIT_GOHM:
+				analog.meaning->unit = SR_UNIT_OHM;
+				analog.meaning->mq = SR_MQ_RESISTANCE;
+				unit_factor *= 1000000000;
+				digits -= 9;
+				break;
+
+			case APPADMM_UNIT_MOHM:
+				analog.meaning->unit = SR_UNIT_OHM;
+				analog.meaning->mq = SR_MQ_RESISTANCE;
+				unit_factor *= 1000000;
+				digits -= 6;
+				break;
+
+			case APPADMM_UNIT_KOHM:
+				analog.meaning->unit = SR_UNIT_OHM;
+				analog.meaning->mq = SR_MQ_RESISTANCE;
+				unit_factor *= 1000;
+				digits -= 3;
+				break;
+
+			case APPADMM_UNIT_OHM:
+				analog.meaning->unit = SR_UNIT_OHM;
+				analog.meaning->mq = SR_MQ_RESISTANCE;
+				break;
+
+			case APPADMM_UNIT_PERCENT:
+				analog.meaning->unit = SR_UNIT_PERCENTAGE;
+				analog.meaning->mq = SR_MQ_DIFFERENCE;
+				break;
+
+			case APPADMM_UNIT_MHZ:
+				analog.meaning->unit = SR_UNIT_HERTZ;
+				analog.meaning->mq = SR_MQ_FREQUENCY;
+				unit_factor *= 1000000;
+				digits -= 6;
+				break;
+
+			case APPADMM_UNIT_KHZ:
+				analog.meaning->unit = SR_UNIT_HERTZ;
+				analog.meaning->mq = SR_MQ_FREQUENCY;
+				unit_factor *= 1000;
+				digits -= 3;
+				break;
+
+			case APPADMM_UNIT_HZ:
+				analog.meaning->unit = SR_UNIT_HERTZ;
+				analog.meaning->mq = SR_MQ_FREQUENCY;
+				break;
+
+			case APPADMM_UNIT_DEGC:
+				analog.meaning->unit = SR_UNIT_CELSIUS;
+				analog.meaning->mq = SR_MQ_TEMPERATURE;
+				break;
+
+			case APPADMM_UNIT_DEGF:
+				analog.meaning->unit = SR_UNIT_FAHRENHEIT;
+				analog.meaning->mq = SR_MQ_TEMPERATURE;
+				break;
+
+			case APPADMM_UNIT_NS:
+				analog.meaning->unit = SR_UNIT_SECOND;
+				analog.meaning->mq = SR_MQ_TIME;
+				unit_factor /= 1000000000;
+				digits += 9;
+				break;
+
+			case APPADMM_UNIT_US:
+				analog.meaning->unit = SR_UNIT_SECOND;
+				analog.meaning->mq = SR_MQ_TIME;
+				unit_factor /= 1000000;
+				digits += 6;
+				break;
+
+			case APPADMM_UNIT_MS:
+				analog.meaning->unit = SR_UNIT_SECOND;
+				analog.meaning->mq = SR_MQ_TIME;
+				unit_factor /= 1000;
+				digits += 3;
+				break;
+
+			case APPADMM_UNIT_SEC:
+				analog.meaning->unit = SR_UNIT_SECOND;
+				analog.meaning->mq = SR_MQ_TIME;
+				break;
+
+			case APPADMM_UNIT_MIN:
+				analog.meaning->unit = SR_UNIT_SECOND;
+				analog.meaning->mq = SR_MQ_TIME;
+				unit_factor *= 60;
+				break;
+
+			case APPADMM_UNIT_KW:
+				analog.meaning->unit = SR_UNIT_WATT;
+				analog.meaning->mq = SR_MQ_POWER;
+				unit_factor *= 1000;
+				digits -= 3;
+				break;
+
+			case APPADMM_UNIT_PF:
+				analog.meaning->unit = SR_UNIT_UNITLESS;
+				analog.meaning->mq = SR_MQ_POWER_FACTOR;
+				break;
+
+			}
+
+			switch (arg_data->function_code) {
+
+			case APPADMM_FUNCTIONCODE_PEAK_HOLD_UA:
+			case APPADMM_FUNCTIONCODE_AC_UA:
+			case APPADMM_FUNCTIONCODE_AC_MV:
+			case APPADMM_FUNCTIONCODE_AC_MA:
+			case APPADMM_FUNCTIONCODE_LPF_MV:
+			case APPADMM_FUNCTIONCODE_LPF_MA:
+			case APPADMM_FUNCTIONCODE_AC_V:
+			case APPADMM_FUNCTIONCODE_AC_A:
+			case APPADMM_FUNCTIONCODE_LPF_V:
+			case APPADMM_FUNCTIONCODE_LPF_A:
+			case APPADMM_FUNCTIONCODE_LOZ_AC_V:
+			case APPADMM_FUNCTIONCODE_AC_W:
+			case APPADMM_FUNCTIONCODE_LOZ_LPF_V:
+			case APPADMM_FUNCTIONCODE_V_HARM:
+			case APPADMM_FUNCTIONCODE_INRUSH:
+			case APPADMM_FUNCTIONCODE_A_HARM:
+			case APPADMM_FUNCTIONCODE_FLEX_INRUSH:
+			case APPADMM_FUNCTIONCODE_FLEX_A_HARM:
+			case APPADMM_FUNCTIONCODE_AC_UA_HFR:
+			case APPADMM_FUNCTIONCODE_AC_A_HFR:
+			case APPADMM_FUNCTIONCODE_AC_MA_HFR:
+			case APPADMM_FUNCTIONCODE_AC_UA_HFR2:
+			case APPADMM_FUNCTIONCODE_AC_V_HFR:
+			case APPADMM_FUNCTIONCODE_AC_MV_HFR:
+			case APPADMM_FUNCTIONCODE_AC_V_PV:
+			case APPADMM_FUNCTIONCODE_AC_V_PV_HFR:
+				if (analog.meaning->unit == SR_UNIT_AMPERE
+					|| analog.meaning->unit == SR_UNIT_VOLT
+					|| analog.meaning->unit == SR_UNIT_WATT) {
+					analog.meaning->mqflags |= SR_MQFLAG_AC;
+					analog.meaning->mqflags |= SR_MQFLAG_RMS;
+				}
+				break;
+
+			case APPADMM_FUNCTIONCODE_DC_UA:
+			case APPADMM_FUNCTIONCODE_DC_MV:
+			case APPADMM_FUNCTIONCODE_DC_MA:
+			case APPADMM_FUNCTIONCODE_DC_V:
+			case APPADMM_FUNCTIONCODE_DC_A:
+			case APPADMM_FUNCTIONCODE_DC_A_OUT:
+			case APPADMM_FUNCTIONCODE_DC_A_OUT_SLOW_LINEAR:
+			case APPADMM_FUNCTIONCODE_DC_A_OUT_FAST_LINEAR:
+			case APPADMM_FUNCTIONCODE_DC_A_OUT_SLOW_STEP:
+			case APPADMM_FUNCTIONCODE_DC_A_OUT_FAST_STEP:
+			case APPADMM_FUNCTIONCODE_LOOP_POWER:
+			case APPADMM_FUNCTIONCODE_LOZ_DC_V:
+			case APPADMM_FUNCTIONCODE_DC_W:
+			case APPADMM_FUNCTIONCODE_FLEX_AC_A:
+			case APPADMM_FUNCTIONCODE_FLEX_LPF_A:
+			case APPADMM_FUNCTIONCODE_FLEX_PEAK_HOLD_A:
+			case APPADMM_FUNCTIONCODE_DC_V_PV:
+				analog.meaning->mqflags |= SR_MQFLAG_DC;
+				break;
+
+			case APPADMM_FUNCTIONCODE_CONTINUITY:
+				analog.meaning->mq = SR_MQ_CONTINUITY;
+				break;
+
+			case APPADMM_FUNCTIONCODE_DIODE:
+				analog.meaning->mqflags |= SR_MQFLAG_DIODE;
+				analog.meaning->mqflags |= SR_MQFLAG_DC;
+				break;
+
+			case APPADMM_FUNCTIONCODE_AC_DC_MV:
+			case APPADMM_FUNCTIONCODE_AC_DC_MA:
+			case APPADMM_FUNCTIONCODE_AC_DC_V:
+			case APPADMM_FUNCTIONCODE_AC_DC_A:
+			case APPADMM_FUNCTIONCODE_VOLT_SENSE:
+			case APPADMM_FUNCTIONCODE_LOZ_AC_DC_V:
+			case APPADMM_FUNCTIONCODE_AC_DC_V_PV:
+				if (analog.meaning->unit == SR_UNIT_AMPERE
+					|| analog.meaning->unit == SR_UNIT_VOLT
+					|| analog.meaning->unit == SR_UNIT_WATT) {
+					analog.meaning->mqflags |= SR_MQFLAG_AC;
+					analog.meaning->mqflags |= SR_MQFLAG_DC;
+					analog.meaning->mqflags |= SR_MQFLAG_RMS;
+				}
+				break;
+
+			/* Currently unused (usually implicitly handled with the unit */
+			default:
+			case APPADMM_FUNCTIONCODE_NONE:
+			case APPADMM_FUNCTIONCODE_OHM:
+			case APPADMM_FUNCTIONCODE_CAP:
+			case APPADMM_FUNCTIONCODE_DEGC:
+			case APPADMM_FUNCTIONCODE_DEGF:
+			case APPADMM_FUNCTIONCODE_FREQUENCY:
+			case APPADMM_FUNCTIONCODE_DUTY:
+			case APPADMM_FUNCTIONCODE_HZ_V:
+			case APPADMM_FUNCTIONCODE_HZ_MV:
+			case APPADMM_FUNCTIONCODE_HZ_A:
+			case APPADMM_FUNCTIONCODE_HZ_MA:
+			case APPADMM_FUNCTIONCODE_250OHM_HART:
+			case APPADMM_FUNCTIONCODE_LOZ_HZ_V:
+			case APPADMM_FUNCTIONCODE_BATTERY:
+			case APPADMM_FUNCTIONCODE_PF:
+			case APPADMM_FUNCTIONCODE_FLEX_HZ_A:
+			case APPADMM_FUNCTIONCODE_PEAK_HOLD_V:
+			case APPADMM_FUNCTIONCODE_PEAK_HOLD_MV:
+			case APPADMM_FUNCTIONCODE_PEAK_HOLD_A:
+			case APPADMM_FUNCTIONCODE_PEAK_HOLD_MA:
+			case APPADMM_FUNCTIONCODE_LOZ_PEAK_HOLD_V:
+				break;
+			}
+
+			analog.spec->spec_digits = digits;
+			analog.encoding->digits = digits;
+
+			display_reading_value *= unit_factor;
+
+			if (display_data->overload == APPADMM_OVERLOAD
+				|| is_dash)
+				val = INFINITY;
+			else
+				val = display_reading_value;
+
+
+		} else {
+
+			val = INFINITY;
+
+			switch (display_data->reading) {
+
+			case APPADMM_WORDCODE_BATT:
+			case APPADMM_WORDCODE_HAZ:
+			case APPADMM_WORDCODE_FUSE:
+			case APPADMM_WORDCODE_PROBE:
+			case APPADMM_WORDCODE_ER:
+			case APPADMM_WORDCODE_ER1:
+			case APPADMM_WORDCODE_ER2:
+			case APPADMM_WORDCODE_ER3:
+				sr_err("ERROR [%s]: %s",
+					appadmm_channel_name(arg_channel),
+					appadmm_wordcode_name(display_data->reading));
+				break;
+
+			case APPADMM_WORDCODE_SPACE:
+			case APPADMM_WORDCODE_DASH:
+			case APPADMM_WORDCODE_DASH1:
+			case APPADMM_WORDCODE_DASH2:
+				/* No need for a message upon dash, space & co. */
+				break;
+
+			default:
+				sr_warn("MESSAGE [%s]: %s",
+					appadmm_channel_name(arg_channel),
+					appadmm_wordcode_name(display_data->reading));
+				break;
+
+			case APPADMM_WORDCODE_DEF:
+				/* Not beautiful but functional */
+				if (display_data->unit == APPADMM_UNIT_DEGC)
+					sr_warn("MESSAGE [%s]: %s °C",
+						appadmm_channel_name(arg_channel),
+						appadmm_wordcode_name(display_data->reading));
+
+				else if (display_data->unit == APPADMM_UNIT_DEGF)
+					sr_warn("MESSAGE [%s]: %s °F",
+						appadmm_channel_name(arg_channel),
+						appadmm_wordcode_name(display_data->reading));
+
+				else
+					sr_warn("MESSAGE [%s]: %s",
+						appadmm_channel_name(arg_channel),
+						appadmm_wordcode_name(display_data->reading));
+				break;
+
+			}
+		}
+		
+		
+		break;
+		
+	case APPADMM_CHANNEL_TIMESTAMP:
+		/** @TODO IMPLEMENT */
+		return SR_OK;
+		break;
+	}
+	
 	if (analog.meaning->mq != 0) {
+		channel = g_slist_nth_data(sdi->channels, arg_channel);
+		analog.meaning->channels = g_slist_append(NULL, channel);
+		analog.num_samples = 1;
 		packet.type = SR_DF_ANALOG;
 		packet.payload = &analog;
+		analog.data = &val;
+		analog.encoding->unitsize = sizeof(val);
 		sr_session_send(sdi, &packet);
 	}
 	
+	return retr;
+	
+}
+static int appadmm_response_read_display(const struct sr_dev_inst *sdi, const struct appadmm_response_data_read_display_s *arg_data)
+{
+	int retr;
+	
+	retr = SR_OK;
+	
+	retr = appadmm_transform_display_data(sdi, APPADMM_CHANNEL_TIMESTAMP, arg_data);
+	if(retr != SR_OK)
+		return retr;
+
+	retr = appadmm_transform_display_data(sdi, APPADMM_CHANNEL_MAIN, arg_data);
+	if(retr != SR_OK)
+		return retr;
+
+	retr = appadmm_transform_display_data(sdi, APPADMM_CHANNEL_SUB, arg_data);
+	if(retr != SR_OK)
+		return retr;
 	
 	return retr;
 }
-
-#if 0
-
-SR_PRIV int sr_appadmm_parse(const uint8_t *data, float *val,
-			    struct sr_datafeed_analog *analog, void *info)
-{
-	struct appadmm_info *info_local;
-	struct appadmm_response_data_read_display_s display_response_data;
-	struct appadmm_display_data_s *display_data;
-
-	gboolean is_sub;
-	gboolean is_dash;
-
-	double unit_factor;
-	double display_reading_value;
-	int8_t digits;
-
-	if (data == NULL
-		|| val == NULL
-		|| analog == NULL
-		|| info == NULL) {
-		sr_err("sr_appadmm_parse(): missing arguments");
-		return SR_ERR_ARG;
-	}
-
-	info_local = info;
-
-	is_sub = (info_local->ch_idx == 1);
-
-	if (appadmm_recv_frame_display_response(data, &display_response_data) != SR_OK) {
-		sr_err("sr_appadmm_parse(): frame decode error");
-		return SR_ERR_DATA;
-	}
-
-	if (!is_sub)
-		display_data = &display_response_data.main_display_data;
-	else
-		display_data = &display_response_data.sub_display_data;
-
-	unit_factor = 1;
-	digits = 0;
-
-	display_reading_value = (double) display_data->reading;
-
-	is_dash = appadmm_is_wordcode_dash(display_data->reading);
-
-	if (!appadmm_is_wordcode(display_data->reading)
-		|| is_dash) {
-
-		switch (display_data->dot) {
-
-		default:
-		case APPADMM_DOT_NONE:
-			digits = 0;
-			unit_factor /= 1;
-			break;
-
-		case APPADMM_DOT_9999_9:
-			digits = 1;
-			unit_factor /= 10;
-			break;
-
-		case APPADMM_DOT_999_99:
-			digits = 2;
-			unit_factor /= 100;
-			break;
-
-		case APPADMM_DOT_99_999:
-			digits = 3;
-			unit_factor /= 1000;
-			break;
-
-		case APPADMM_DOT_9_9999:
-			digits = 4;
-			unit_factor /= 10000;
-			break;
-
-		}
-
-		switch (display_data->data_content) {
-
-		case APPADMM_DATA_CONTENT_MAXIMUM:
-			analog->meaning->mqflags |= SR_MQFLAG_MAX;
-			break;
-
-		case APPADMM_DATA_CONTENT_MINIMUM:
-			analog->meaning->mqflags |= SR_MQFLAG_MIN;
-			break;
-
-		case APPADMM_DATA_CONTENT_AVERAGE:
-			analog->meaning->mqflags |= SR_MQFLAG_AVG;
-			break;
-
-		case APPADMM_DATA_CONTENT_PEAK_HOLD_MAX:
-			analog->meaning->mqflags |= SR_MQFLAG_MAX;
-			if (is_sub)
-				analog->meaning->mqflags |= SR_MQFLAG_HOLD;
-			break;
-
-		case APPADMM_DATA_CONTENT_PEAK_HOLD_MIN:
-			analog->meaning->mqflags |= SR_MQFLAG_MIN;
-			if (is_sub)
-				analog->meaning->mqflags |= SR_MQFLAG_HOLD;
-			break;
-
-		case APPADMM_DATA_CONTENT_AUTO_HOLD:
-			if (is_sub)
-				analog->meaning->mqflags |= SR_MQFLAG_HOLD;
-			break;
-
-		case APPADMM_DATA_CONTENT_HOLD:
-			if (is_sub)
-				analog->meaning->mqflags |= SR_MQFLAG_HOLD;
-			break;
-
-		case APPADMM_DATA_CONTENT_REL_DELTA:
-		case APPADMM_DATA_CONTENT_REL_PERCENT:
-			if (!is_sub)
-				analog->meaning->mqflags |= SR_MQFLAG_RELATIVE;
-			else
-				analog->meaning->mqflags |= SR_MQFLAG_REFERENCE;
-			break;
-
-		default:
-		case APPADMM_DATA_CONTENT_FREQUENCY:
-		case APPADMM_DATA_CONTENT_CYCLE:
-		case APPADMM_DATA_CONTENT_DUTY:
-		case APPADMM_DATA_CONTENT_MEMORY_STAMP:
-		case APPADMM_DATA_CONTENT_MEMORY_SAVE:
-		case APPADMM_DATA_CONTENT_MEMORY_LOAD:
-		case APPADMM_DATA_CONTENT_LOG_SAVE:
-		case APPADMM_DATA_CONTENT_LOG_LOAD:
-		case APPADMM_DATA_CONTENT_LOG_RATE:
-		case APPADMM_DATA_CONTENT_REL_REFERENCE:
-		case APPADMM_DATA_CONTENT_DBM:
-		case APPADMM_DATA_CONTENT_DB:
-		case APPADMM_DATA_CONTENT_SETUP:
-		case APPADMM_DATA_CONTENT_LOG_STAMP:
-		case APPADMM_DATA_CONTENT_LOG_MAX:
-		case APPADMM_DATA_CONTENT_LOG_MIN:
-		case APPADMM_DATA_CONTENT_LOG_TP:
-		case APPADMM_DATA_CONTENT_CURRENT_OUTPUT:
-		case APPADMM_DATA_CONTENT_CUR_OUT_0_20MA_PERCENT:
-		case APPADMM_DATA_CONTENT_CUR_OUT_4_20MA_PERCENT:
-			break;
-
-		}
-
-		if (display_response_data.auto_range == APPADMM_AUTO_RANGE) {
-
-			analog->meaning->mqflags |= SR_MQFLAG_AUTORANGE;
-
-		}
-
-		switch (display_data->unit) {
-
-		default: case APPADMM_UNIT_NONE:
-			analog->meaning->unit = SR_UNIT_UNITLESS;
-			break;
-
-		case APPADMM_UNIT_MV:
-			analog->meaning->unit = SR_UNIT_VOLT;
-			analog->meaning->mq = SR_MQ_VOLTAGE;
-			unit_factor /= 1000;
-			digits += 3;
-			break;
-
-		case APPADMM_UNIT_V:
-			analog->meaning->unit = SR_UNIT_VOLT;
-			analog->meaning->mq = SR_MQ_VOLTAGE;
-			break;
-
-		case APPADMM_UNIT_UA:
-			analog->meaning->unit = SR_UNIT_AMPERE;
-			analog->meaning->mq = SR_MQ_CURRENT;
-			unit_factor /= 1000000;
-			digits += 6;
-			break;
-		case APPADMM_UNIT_MA:
-			analog->meaning->unit = SR_UNIT_AMPERE;
-			analog->meaning->mq = SR_MQ_CURRENT;
-			unit_factor /= 1000;
-			digits += 3;
-			break;
-
-		case APPADMM_UNIT_A:
-			analog->meaning->unit = SR_UNIT_AMPERE;
-			analog->meaning->mq = SR_MQ_CURRENT;
-			break;
-
-		case APPADMM_UNIT_DB:
-			analog->meaning->unit = SR_UNIT_DECIBEL_VOLT;
-			analog->meaning->mq = SR_MQ_POWER;
-			break;
-
-		case APPADMM_UNIT_DBM:
-			analog->meaning->unit = SR_UNIT_DECIBEL_MW;
-			analog->meaning->mq = SR_MQ_POWER;
-			break;
-
-		case APPADMM_UNIT_NF:
-			analog->meaning->unit = SR_UNIT_FARAD;
-			analog->meaning->mq = SR_MQ_CAPACITANCE;
-			unit_factor /= 1000000000;
-			digits += 9;
-			break;
-
-		case APPADMM_UNIT_UF:
-			analog->meaning->unit = SR_UNIT_FARAD;
-			analog->meaning->mq = SR_MQ_CAPACITANCE;
-			unit_factor /= 1000000;
-			digits += 6;
-			break;
-
-		case APPADMM_UNIT_MF:
-			analog->meaning->unit = SR_UNIT_FARAD;
-			analog->meaning->mq = SR_MQ_CAPACITANCE;
-			unit_factor /= 1000;
-			digits += 3;
-			break;
-
-		case APPADMM_UNIT_GOHM:
-			analog->meaning->unit = SR_UNIT_OHM;
-			analog->meaning->mq = SR_MQ_RESISTANCE;
-			unit_factor *= 1000000000;
-			digits -= 9;
-			break;
-
-		case APPADMM_UNIT_MOHM:
-			analog->meaning->unit = SR_UNIT_OHM;
-			analog->meaning->mq = SR_MQ_RESISTANCE;
-			unit_factor *= 1000000;
-			digits -= 6;
-			break;
-
-		case APPADMM_UNIT_KOHM:
-			analog->meaning->unit = SR_UNIT_OHM;
-			analog->meaning->mq = SR_MQ_RESISTANCE;
-			unit_factor *= 1000;
-			digits -= 3;
-			break;
-
-		case APPADMM_UNIT_OHM:
-			analog->meaning->unit = SR_UNIT_OHM;
-			analog->meaning->mq = SR_MQ_RESISTANCE;
-			break;
-
-		case APPADMM_UNIT_PERCENT:
-			analog->meaning->unit = SR_UNIT_PERCENTAGE;
-			analog->meaning->mq = SR_MQ_DIFFERENCE;
-			break;
-
-		case APPADMM_UNIT_MHZ:
-			analog->meaning->unit = SR_UNIT_HERTZ;
-			analog->meaning->mq = SR_MQ_FREQUENCY;
-			unit_factor *= 1000000;
-			digits -= 6;
-			break;
-
-		case APPADMM_UNIT_KHZ:
-			analog->meaning->unit = SR_UNIT_HERTZ;
-			analog->meaning->mq = SR_MQ_FREQUENCY;
-			unit_factor *= 1000;
-			digits -= 3;
-			break;
-
-		case APPADMM_UNIT_HZ:
-			analog->meaning->unit = SR_UNIT_HERTZ;
-			analog->meaning->mq = SR_MQ_FREQUENCY;
-			break;
-
-		case APPADMM_UNIT_DEGC:
-			analog->meaning->unit = SR_UNIT_CELSIUS;
-			analog->meaning->mq = SR_MQ_TEMPERATURE;
-			break;
-
-		case APPADMM_UNIT_DEGF:
-			analog->meaning->unit = SR_UNIT_FAHRENHEIT;
-			analog->meaning->mq = SR_MQ_TEMPERATURE;
-			break;
-
-		case APPADMM_UNIT_NS:
-			analog->meaning->unit = SR_UNIT_SECOND;
-			analog->meaning->mq = SR_MQ_TIME;
-			unit_factor /= 1000000000;
-			digits += 9;
-			break;
-
-		case APPADMM_UNIT_US:
-			analog->meaning->unit = SR_UNIT_SECOND;
-			analog->meaning->mq = SR_MQ_TIME;
-			unit_factor /= 1000000;
-			digits += 6;
-			break;
-
-		case APPADMM_UNIT_MS:
-			analog->meaning->unit = SR_UNIT_SECOND;
-			analog->meaning->mq = SR_MQ_TIME;
-			unit_factor /= 1000;
-			digits += 3;
-			break;
-
-		case APPADMM_UNIT_SEC:
-			analog->meaning->unit = SR_UNIT_SECOND;
-			analog->meaning->mq = SR_MQ_TIME;
-			break;
-
-		case APPADMM_UNIT_MIN:
-			analog->meaning->unit = SR_UNIT_SECOND;
-			analog->meaning->mq = SR_MQ_TIME;
-			unit_factor *= 60;
-			break;
-
-		case APPADMM_UNIT_KW:
-			analog->meaning->unit = SR_UNIT_WATT;
-			analog->meaning->mq = SR_MQ_POWER;
-			unit_factor *= 1000;
-			digits -= 3;
-			break;
-
-		case APPADMM_UNIT_PF:
-			analog->meaning->unit = SR_UNIT_UNITLESS;
-			analog->meaning->mq = SR_MQ_POWER_FACTOR;
-			break;
-
-		}
-
-		switch (display_response_data.function_code) {
-
-		case APPADMM_FUNCTIONCODE_PEAK_HOLD_UA:
-		case APPADMM_FUNCTIONCODE_AC_UA:
-		case APPADMM_FUNCTIONCODE_AC_MV:
-		case APPADMM_FUNCTIONCODE_AC_MA:
-		case APPADMM_FUNCTIONCODE_LPF_MV:
-		case APPADMM_FUNCTIONCODE_LPF_MA:
-		case APPADMM_FUNCTIONCODE_AC_V:
-		case APPADMM_FUNCTIONCODE_AC_A:
-		case APPADMM_FUNCTIONCODE_LPF_V:
-		case APPADMM_FUNCTIONCODE_LPF_A:
-		case APPADMM_FUNCTIONCODE_LOZ_AC_V:
-		case APPADMM_FUNCTIONCODE_AC_W:
-		case APPADMM_FUNCTIONCODE_LOZ_LPF_V:
-		case APPADMM_FUNCTIONCODE_V_HARM:
-		case APPADMM_FUNCTIONCODE_INRUSH:
-		case APPADMM_FUNCTIONCODE_A_HARM:
-		case APPADMM_FUNCTIONCODE_FLEX_INRUSH:
-		case APPADMM_FUNCTIONCODE_FLEX_A_HARM:
-		case APPADMM_FUNCTIONCODE_AC_UA_HFR:
-		case APPADMM_FUNCTIONCODE_AC_A_HFR:
-		case APPADMM_FUNCTIONCODE_AC_MA_HFR:
-		case APPADMM_FUNCTIONCODE_AC_UA_HFR2:
-		case APPADMM_FUNCTIONCODE_AC_V_HFR:
-		case APPADMM_FUNCTIONCODE_AC_MV_HFR:
-		case APPADMM_FUNCTIONCODE_AC_V_PV:
-		case APPADMM_FUNCTIONCODE_AC_V_PV_HFR:
-			if (analog->meaning->unit == SR_UNIT_AMPERE
-				|| analog->meaning->unit == SR_UNIT_VOLT
-				|| analog->meaning->unit == SR_UNIT_WATT) {
-				analog->meaning->mqflags |= SR_MQFLAG_AC;
-				analog->meaning->mqflags |= SR_MQFLAG_RMS;
-			}
-			break;
-
-		case APPADMM_FUNCTIONCODE_DC_UA:
-		case APPADMM_FUNCTIONCODE_DC_MV:
-		case APPADMM_FUNCTIONCODE_DC_MA:
-		case APPADMM_FUNCTIONCODE_DC_V:
-		case APPADMM_FUNCTIONCODE_DC_A:
-		case APPADMM_FUNCTIONCODE_DC_A_OUT:
-		case APPADMM_FUNCTIONCODE_DC_A_OUT_SLOW_LINEAR:
-		case APPADMM_FUNCTIONCODE_DC_A_OUT_FAST_LINEAR:
-		case APPADMM_FUNCTIONCODE_DC_A_OUT_SLOW_STEP:
-		case APPADMM_FUNCTIONCODE_DC_A_OUT_FAST_STEP:
-		case APPADMM_FUNCTIONCODE_LOOP_POWER:
-		case APPADMM_FUNCTIONCODE_LOZ_DC_V:
-		case APPADMM_FUNCTIONCODE_DC_W:
-		case APPADMM_FUNCTIONCODE_FLEX_AC_A:
-		case APPADMM_FUNCTIONCODE_FLEX_LPF_A:
-		case APPADMM_FUNCTIONCODE_FLEX_PEAK_HOLD_A:
-		case APPADMM_FUNCTIONCODE_DC_V_PV:
-			analog->meaning->mqflags |= SR_MQFLAG_DC;
-			break;
-
-		case APPADMM_FUNCTIONCODE_CONTINUITY:
-			analog->meaning->mq = SR_MQ_CONTINUITY;
-			break;
-
-		case APPADMM_FUNCTIONCODE_DIODE:
-			analog->meaning->mqflags |= SR_MQFLAG_DIODE;
-			analog->meaning->mqflags |= SR_MQFLAG_DC;
-			break;
-
-		case APPADMM_FUNCTIONCODE_AC_DC_MV:
-		case APPADMM_FUNCTIONCODE_AC_DC_MA:
-		case APPADMM_FUNCTIONCODE_AC_DC_V:
-		case APPADMM_FUNCTIONCODE_AC_DC_A:
-		case APPADMM_FUNCTIONCODE_VOLT_SENSE:
-		case APPADMM_FUNCTIONCODE_LOZ_AC_DC_V:
-		case APPADMM_FUNCTIONCODE_AC_DC_V_PV:
-			if (analog->meaning->unit == SR_UNIT_AMPERE
-				|| analog->meaning->unit == SR_UNIT_VOLT
-				|| analog->meaning->unit == SR_UNIT_WATT) {
-				analog->meaning->mqflags |= SR_MQFLAG_AC;
-				analog->meaning->mqflags |= SR_MQFLAG_DC;
-				analog->meaning->mqflags |= SR_MQFLAG_RMS;
-			}
-			break;
-
-		/* Currently unused (usually implicitly handled with the unit */
-		default:
-		case APPADMM_FUNCTIONCODE_NONE:
-		case APPADMM_FUNCTIONCODE_OHM:
-		case APPADMM_FUNCTIONCODE_CAP:
-		case APPADMM_FUNCTIONCODE_DEGC:
-		case APPADMM_FUNCTIONCODE_DEGF:
-		case APPADMM_FUNCTIONCODE_FREQUENCY:
-		case APPADMM_FUNCTIONCODE_DUTY:
-		case APPADMM_FUNCTIONCODE_HZ_V:
-		case APPADMM_FUNCTIONCODE_HZ_MV:
-		case APPADMM_FUNCTIONCODE_HZ_A:
-		case APPADMM_FUNCTIONCODE_HZ_MA:
-		case APPADMM_FUNCTIONCODE_250OHM_HART:
-		case APPADMM_FUNCTIONCODE_LOZ_HZ_V:
-		case APPADMM_FUNCTIONCODE_BATTERY:
-		case APPADMM_FUNCTIONCODE_PF:
-		case APPADMM_FUNCTIONCODE_FLEX_HZ_A:
-		case APPADMM_FUNCTIONCODE_PEAK_HOLD_V:
-		case APPADMM_FUNCTIONCODE_PEAK_HOLD_MV:
-		case APPADMM_FUNCTIONCODE_PEAK_HOLD_A:
-		case APPADMM_FUNCTIONCODE_PEAK_HOLD_MA:
-		case APPADMM_FUNCTIONCODE_LOZ_PEAK_HOLD_V:
-			break;
-		}
-
-		analog->spec->spec_digits = digits;
-		analog->encoding->digits = digits;
-
-		display_reading_value *= unit_factor;
-
-		if (display_data->overload == APPADMM_OVERLOAD
-			|| is_dash)
-			*val = INFINITY;
-		else
-			*val = display_reading_value;
-
-
-	} else {
-
-		*val = INFINITY;
-
-		switch (display_data->reading) {
-
-		case APPADMM_WORDCODE_BATT:
-		case APPADMM_WORDCODE_HAZ:
-		case APPADMM_WORDCODE_FUSE:
-		case APPADMM_WORDCODE_PROBE:
-		case APPADMM_WORDCODE_ER:
-		case APPADMM_WORDCODE_ER1:
-		case APPADMM_WORDCODE_ER2:
-		case APPADMM_WORDCODE_ER3:
-			sr_err("ERROR [%s]: %s",
-				sr_appadmm_channel_formats[info_local->ch_idx],
-				appadmm_wordcode_name(display_data->reading));
-			break;
-
-		case APPADMM_WORDCODE_SPACE:
-		case APPADMM_WORDCODE_DASH:
-		case APPADMM_WORDCODE_DASH1:
-		case APPADMM_WORDCODE_DASH2:
-			/* No need for a message upon dash, space & co. */
-			break;
-
-		default:
-			sr_warn("MESSAGE [%s]: %s",
-				sr_appadmm_channel_formats[info_local->ch_idx],
-				appadmm_wordcode_name(display_data->reading));
-			break;
-
-		case APPADMM_WORDCODE_DEF:
-			/* Not beautiful but functional */
-			if (display_data->unit == APPADMM_UNIT_DEGC)
-				sr_warn("MESSAGE [%s]: %s °C",
-					sr_appadmm_channel_formats[info_local->ch_idx],
-					appadmm_wordcode_name(display_data->reading));
-
-			else if (display_data->unit == APPADMM_UNIT_DEGF)
-				sr_warn("MESSAGE [%s]: %s °F",
-					sr_appadmm_channel_formats[info_local->ch_idx],
-					appadmm_wordcode_name(display_data->reading));
-
-			else
-				sr_warn("MESSAGE [%s]: %s",
-					sr_appadmm_channel_formats[info_local->ch_idx],
-					appadmm_wordcode_name(display_data->reading));
-			break;
-
-		}
-	}
-
-	info_local->ch_idx++;
-
-	return SR_OK;
-}
-
-#endif//1|0

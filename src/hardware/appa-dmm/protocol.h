@@ -44,15 +44,13 @@
 
 #define APPADMM_PACKET_SIZE 17
  
-#define APPPA_B_GENERAL_TIMEOUT 5000
-
-#define APPADMM_GENERAL_DELAY 5
+#define APPADMM_HANDSHAKE_TIMEOUT 1000
+#define APPADMM_WRITE_BLOCKING_TIMEOUT 5
+#define APPADMM_READ_BLOCKING_TIMEOUT 64
 
 #define APPADMM_DISPLAY_COUNT 2
 
 #define APPADMM_CONF_SERIAL "9600/8n1"
-
-#define APPADMM_WRITE_BLOCKING_TIMEOUT 5
 
 #define APPADMM_STRING_NA "N/A"
 
@@ -125,6 +123,13 @@ enum appadmm_frame_type_e {
 	APPADMM_FRAME_TYPE_INVALID = 0x00,
 	APPADMM_FRAME_TYPE_REQUEST = 0x01,
 	APPADMM_FRAME_TYPE_RESPONSE = 0x02,
+};
+
+enum appadmm_channel_e {
+	APPADMM_CHANNEL_INVALID = -1,
+	APPADMM_CHANNEL_TIMESTAMP = 0x00,
+	APPADMM_CHANNEL_MAIN = 0x01,
+	APPADMM_CHANNEL_SUB = 0x02,
 };
 
 /**
@@ -664,8 +669,9 @@ struct appadmm_frame_s {
 
 struct dev_context {
 	enum appadmm_connection_type_e connection_type;
-	gboolean blocking;
 	enum appadmm_model_id_e model_id;
+	struct sr_sw_limits limits;
+	gboolean request_active;
 	uint8_t recv_buffer[APPADMM_FRAME_MAX_SIZE];
 	uint8_t recv_buffer_len;
 };
@@ -674,43 +680,13 @@ struct dev_context {
 /* ****** Functions ****** */
 /* *********************** */
 
-static gboolean appadmm_is_wordcode(const int arg_wordcode);
 
-static gboolean appadmm_is_wordcode_dash(const int arg_wordcode);
+SR_PRIV int appadmm_receive_serial(int fd, int revents, void *cb_data);
 
-static const char *appadmm_model_id_name(const enum appadmm_model_id_e arg_model_id);
-
-static const char *appadmm_wordcode_name(const enum appadmm_wordcode_e arg_wordcode);
-
-static uint8_t appadmm_checksum(const uint8_t *arg_data, int arg_size);
-
-static int appadmm_frame_request_size(enum appadmm_command_e arg_command);
-
-static int appadmm_frame_response_size(enum appadmm_command_e arg_command);
-
-static int appadmm_is_response_frame_data_size_valid(enum appadmm_command_e arg_command, int arg_size);
-
-static int appadmm_is_request_frame_data_size_valid(enum appadmm_command_e arg_command, int arg_size);
-
-SR_PRIV int appadmm_buffer_reset(struct dev_context *devc);
+SR_PRIV int appadmm_receive(const struct sr_dev_inst *sdi, gboolean arg_is_blocking);
 
 SR_PRIV int appadmm_send(const struct sr_dev_inst *sdi, const struct appadmm_frame_s *arg_frame);
 
-SR_PRIV int appadmm_process(const struct sr_dev_inst *sdi, const struct appadmm_frame_s *arg_frame);
-
-SR_PRIV int appadmm_receive(int fd, int revents, void *cb_data);
-
-static int appadmm_frame_encode(const struct appadmm_frame_s *arg_frame, uint8_t *arg_out_data, int arg_size, int *arg_out_size);
-
-static int appadmm_frame_decode_read_information(const uint8_t **rdptr, struct appadmm_response_data_read_information_s* arg_data);
-static int appadmm_frame_decode_read_display(const uint8_t **rdptr, struct appadmm_response_data_read_display_s* arg_data);
-
-static int appadmm_frame_decode(const uint8_t *arg_data, int arg_size, struct appadmm_frame_s *arg_out_frame);
-
-SR_PRIV int appadmm_receive(int fd, int revents, void *cb_data);
-
-static int appadmm_response_read_information(const struct sr_dev_inst *sdi, const struct appadmm_response_data_read_information_s *arg_data);
-
-static int appadmm_response_read_display(const struct sr_dev_inst *sdi, const struct appadmm_response_data_read_display_s *arg_data);
+SR_PRIV const char *appadmm_channel_name(const enum appadmm_channel_e arg_channel);
 
 #endif

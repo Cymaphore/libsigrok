@@ -51,17 +51,17 @@ static GSList *scan(struct sr_dev_driver *di, GSList *options)
 	GSList *it;
 	struct sr_config *src;
 	struct appadmm_frame_s frame;
-
-	sr_info("Scanning...");
+	int handshake_cycles;
 
 	devices = NULL;
 	drvc = di->context;
 	drvc->instances = NULL;
 
 	devc = g_malloc0(sizeof(struct dev_context));
-	devc->blocking = TRUE;
+	devc->model_id = APPADMM_MODEL_ID_INVALID;
 
 	serialcomm = APPADMM_CONF_SERIAL;
+	conn = NULL;
 	for (it = options; it; it = it->next) {
 		src = it->data;
 		switch (src->key) {
@@ -73,9 +73,14 @@ static GSList *scan(struct sr_dev_driver *di, GSList *options)
 			break;
 		}
 	}
+	
 	if (!conn)
 		return NULL;
+	if (!serialcomm)
+		serialcomm = APPADMM_CONF_SERIAL;
+	
 	devc->connection_type = APPADMM_CONNECTION_TYPE_SERIAL;
+	
 	if (conn != NULL)
 		if (strncmp(conn, "bt/", 3) == 0)
 			devc->connection_type = APPADMM_CONNECTION_TYPE_BLE;
@@ -86,59 +91,51 @@ static GSList *scan(struct sr_dev_driver *di, GSList *options)
 		return NULL;
 	
 	sdi = g_malloc0(sizeof(*sdi));
+	
 	sdi->conn = serial;
 	sdi->inst_type = SR_INST_SERIAL;
 	sdi->status = SR_ST_INACTIVE;
 	sdi->driver = di;
 	sdi->priv = devc;
-	sr_info("Testing port %s...", conn);
+	
+	sr_sw_limits_init(&devc->limits);
 
-	/*
-	sr_err("Sending DISPLAY REQUEST...");
-	frame.command = APPADMM_COMMAND_READ_DISPLAY;
-	appadmm_send(sdi, &frame);
-	
-	appadmm_receive(0, G_IO_IN, sdi);
-	appadmm_receive(0, G_IO_IN, sdi);
-	appadmm_receive(0, G_IO_IN, sdi);
-	*/
-	
-	sr_err("Sending INFORMATION REQUEST...");
 	frame.command = APPADMM_COMMAND_READ_INFORMATION;
 	appadmm_send(sdi, &frame);
 	
-	sr_err("R1");
-	appadmm_receive(0, G_IO_IN, sdi);
-	sr_err("R2");
-	appadmm_receive(0, G_IO_IN, sdi);
-	sr_err("R3");
-	appadmm_receive(0, G_IO_IN, sdi);
-	sr_err("RD");
+	handshake_cycles = APPADMM_HANDSHAKE_TIMEOUT / APPADMM_READ_BLOCKING_TIMEOUT;
+	while (handshake_cycles-- > 0) {
+		appadmm_receive(sdi, TRUE);
+		if (devc->model_id != APPADMM_MODEL_ID_INVALID) {
+			break;
+		}
+	};
 	
-	sr_err("Vendor: %s, Model: %s, Version: %s, Model ID: %i",
+	if (devc->model_id == APPADMM_MODEL_ID_INVALID) {
+		sr_err("No valid response to read_information request.");
+		sr_serial_dev_inst_free(serial);
+		serial_close(serial);
+		return NULL;
+	}
+	
+	sr_err("APPA-Device detected; Vendor: %s, Model: %s, Version: %s, Model ID: %i",
 		sdi->vendor,
 		sdi->model,
 		sdi->version,
 		devc->model_id);
-
-	/*
-	sr_err("Sending DISPLAY REQUEST...");
-	frame.command = APPADMM_COMMAND_READ_DISPLAY;
-	appadmm_send(sdi, &frame);
 	
-	appadmm_receive(0, G_IO_IN, sdi);
-	appadmm_receive(0, G_IO_IN, sdi);
-	appadmm_receive(0, G_IO_IN, sdi);
-	*/
+	sr_channel_new(sdi, APPADMM_CHANNEL_TIMESTAMP, SR_CHANNEL_ANALOG, TRUE, appadmm_channel_name(APPADMM_CHANNEL_TIMESTAMP));
+	sr_channel_new(sdi, APPADMM_CHANNEL_MAIN, SR_CHANNEL_ANALOG, TRUE, appadmm_channel_name(APPADMM_CHANNEL_MAIN));
+	sr_channel_new(sdi, APPADMM_CHANNEL_SUB, SR_CHANNEL_ANALOG, TRUE, appadmm_channel_name(APPADMM_CHANNEL_SUB));
 	
-	devc->blocking = FALSE;
+	devices = g_slist_append(devices, sdi);
 	
-	sr_err("All over.");
+	serial_close(serial);
 	
-	devices = NULL;
-	
-	return devices;
+	return std_scan_complete(di, devices);
 }
+
+#if 0
 
 static int dev_open(struct sr_dev_inst *sdi)
 {
@@ -158,18 +155,29 @@ static int dev_close(struct sr_dev_inst *sdi)
 	return SR_OK;
 }
 
+#endif//1|0
+
 static int config_get(uint32_t key, GVariant **data,
 	const struct sr_dev_inst *sdi, const struct sr_channel_group *cg)
 {
+	struct dev_context *devc;
+	
 	int ret;
 
-	(void)sdi;
+	if (!sdi)
+		return SR_ERR_ARG;
+	
+	devc = sdi->priv;
+	
 	(void)data;
 	(void)cg;
 
 	ret = SR_OK;
 	switch (key) {
-	/* TODO */
+	case SR_CONF_LIMIT_SAMPLES:
+	case SR_CONF_LIMIT_FRAMES:
+	case SR_CONF_LIMIT_MSEC:
+		return sr_sw_limits_config_get(&devc->limits, key, data);
 	default:
 		return SR_ERR_NA;
 	}
@@ -180,15 +188,27 @@ static int config_get(uint32_t key, GVariant **data,
 static int config_set(uint32_t key, GVariant *data,
 	const struct sr_dev_inst *sdi, const struct sr_channel_group *cg)
 {
+	struct dev_context *devc;
+	
 	int ret;
 
-	(void)sdi;
+	if (!sdi)
+		return SR_ERR_ARG;
+	
+	devc = sdi->priv;
+	
+	(void)data;
+	(void)cg;
+
 	(void)data;
 	(void)cg;
 
 	ret = SR_OK;
 	switch (key) {
-	/* TODO */
+	case SR_CONF_LIMIT_SAMPLES:
+	case SR_CONF_LIMIT_FRAMES:
+	case SR_CONF_LIMIT_MSEC:
+		return sr_sw_limits_config_set(&devc->limits, key, data);
 	default:
 		ret = SR_ERR_NA;
 	}
@@ -202,6 +222,10 @@ static int config_list(uint32_t key, GVariant **data,
 	int ret;
 
 	ret = SR_OK;
+
+	if (!sdi)
+		return STD_CONFIG_LIST(key, data, sdi, cg, scanopts, drvopts, devopts);
+
 	switch (key) {
 	case SR_CONF_SCAN_OPTIONS:
 	case SR_CONF_DEVICE_OPTIONS:
@@ -215,22 +239,35 @@ static int config_list(uint32_t key, GVariant **data,
 
 static int dev_acquisition_start(const struct sr_dev_inst *sdi)
 {
-	/* TODO: configure hardware, reset acquisition state, set up
-	 * callbacks and send header packet. */
+	struct dev_context *devc;
+	struct sr_serial_dev_inst *serial;
+	
+	int retr;
+	
+	devc = sdi->priv;
+	serial = sdi->conn;
+	
+	sr_sw_limits_acquisition_start(&devc->limits);
+	retr = std_session_send_df_header(sdi);
+	if(retr != SR_OK)
+		return retr;
+	
+	retr = serial_source_add(sdi->session, serial, G_IO_IN, 10,
+			appadmm_receive_serial, (void *)sdi);
 
-	(void)sdi;
-
-	return SR_OK;
+	return retr;
 }
+
+#if 0
 
 static int dev_acquisition_stop(struct sr_dev_inst *sdi)
 {
-	/* TODO: stop acquisition. */
-
 	(void)sdi;
 
 	return SR_OK;
 }
+
+#endif//1|0
 
 static struct sr_dev_driver appa_dmm_driver_info = {
 	.name = "appa-dmm",
@@ -244,10 +281,10 @@ static struct sr_dev_driver appa_dmm_driver_info = {
 	.config_get = config_get,
 	.config_set = config_set,
 	.config_list = config_list,
-	.dev_open = dev_open,
-	.dev_close = dev_close,
+	.dev_open = std_serial_dev_open,
+	.dev_close = std_serial_dev_close,
 	.dev_acquisition_start = dev_acquisition_start,
-	.dev_acquisition_stop = dev_acquisition_stop,
+	.dev_acquisition_stop = std_serial_dev_acquisition_stop,
 	.context = NULL,
 };
 SR_REGISTER_DEV_DRIVER(appa_dmm_driver_info);

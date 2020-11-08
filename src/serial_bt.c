@@ -85,6 +85,10 @@ static const struct scan_supported_item {
 	{ "RSPRO S1", SER_BT_CONN_APPADMM, },
 	{ "RSPRO S2", SER_BT_CONN_APPADMM, },
 	{ "RSPRO S3", SER_BT_CONN_APPADMM, },
+	{ "Sefram 7320", SER_BT_CONN_APPADMM, },
+	{ "Sefram 7321", SER_BT_CONN_APPADMM, },
+	{ "Sefram 7322", SER_BT_CONN_APPADMM, },
+	{ "Sefram 7323", SER_BT_CONN_APPADMM, },
 	{ "Sefram 7352B", SER_BT_CONN_APPADMM, },
 	/* }}} */
 	{ NULL, SER_BT_CONN_UNKNOWN, },
@@ -96,7 +100,7 @@ static const char *ser_bt_conn_names[SER_BT_CONN_MAX] = {
 	[SER_BT_CONN_BLE122] = "ble122",
 	[SER_BT_CONN_NRF51] = "nrf51",
 	[SER_BT_CONN_CC254x] = "cc254x",
-	[SER_BT_CONN_APPADMM] = "appa-b",
+	[SER_BT_CONN_APPADMM] = "appa-dmm",
 };
 
 static enum ser_bt_conn_t lookup_conn_name(const char *name)
