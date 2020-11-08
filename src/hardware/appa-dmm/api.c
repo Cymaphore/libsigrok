@@ -41,19 +41,27 @@ static struct sr_dev_driver appa_dmm_driver_info;
 static GSList *scan(struct sr_dev_driver *di, GSList *options)
 {
 	struct drv_context *drvc;
-	struct dev_context *context;
+	struct dev_context *devc;
 	GSList *devices;
 	const char *conn;
 	const char *serialcomm;
+	struct sr_dev_inst *sdi;
 	struct sr_serial_dev_inst *serial;
 	
 	GSList *it;
 	struct sr_config *src;
+	struct appadmm_frame_s frame;
+
+	sr_info("Scanning...");
 
 	devices = NULL;
 	drvc = di->context;
 	drvc->instances = NULL;
 
+	devc = g_malloc0(sizeof(struct dev_context));
+	devc->blocking = TRUE;
+
+	serialcomm = APPADMM_CONF_SERIAL;
 	for (it = options; it; it = it->next) {
 		src = it->data;
 		switch (src->key) {
@@ -67,27 +75,65 @@ static GSList *scan(struct sr_dev_driver *di, GSList *options)
 	}
 	if (!conn)
 		return NULL;
-	if (!serialcomm)
-		serialcomm = APPADMM_CONF_SERIAL;
-	context->connection_type = APPADMM_CONNECTION_TYPE_SERIAL;
+	devc->connection_type = APPADMM_CONNECTION_TYPE_SERIAL;
 	if (conn != NULL)
 		if (strncmp(conn, "bt/", 3) == 0)
-			context->connection_type = APPADMM_CONNECTION_TYPE_BLE;
+			devc->connection_type = APPADMM_CONNECTION_TYPE_BLE;
 
 	serial = sr_serial_dev_inst_new(conn, serialcomm);
 	
 	if (serial_open(serial, SERIAL_RDWR) != SR_OK)
 		return NULL;
 	
+	sdi = g_malloc0(sizeof(*sdi));
+	sdi->conn = serial;
+	sdi->inst_type = SR_INST_SERIAL;
+	sdi->status = SR_ST_INACTIVE;
+	sdi->driver = di;
+	sdi->priv = devc;
 	sr_info("Testing port %s...", conn);
 
-	struct appadmm_frame_s frame;
+	/*
+	sr_err("Sending DISPLAY REQUEST...");
 	frame.command = APPADMM_COMMAND_READ_DISPLAY;
-	appadmm_send(serial, &frame);
+	appadmm_send(sdi, &frame);
 	
-	usleep(10000);
+	appadmm_receive(0, G_IO_IN, sdi);
+	appadmm_receive(0, G_IO_IN, sdi);
+	appadmm_receive(0, G_IO_IN, sdi);
+	*/
 	
-	appadmm_receive(0, G_IO_IN, di);
+	sr_err("Sending INFORMATION REQUEST...");
+	frame.command = APPADMM_COMMAND_READ_INFORMATION;
+	appadmm_send(sdi, &frame);
+	
+	sr_err("R1");
+	appadmm_receive(0, G_IO_IN, sdi);
+	sr_err("R2");
+	appadmm_receive(0, G_IO_IN, sdi);
+	sr_err("R3");
+	appadmm_receive(0, G_IO_IN, sdi);
+	sr_err("RD");
+	
+	sr_err("Vendor: %s, Model: %s, Version: %s, Model ID: %i",
+		sdi->vendor,
+		sdi->model,
+		sdi->version,
+		devc->model_id);
+
+	/*
+	sr_err("Sending DISPLAY REQUEST...");
+	frame.command = APPADMM_COMMAND_READ_DISPLAY;
+	appadmm_send(sdi, &frame);
+	
+	appadmm_receive(0, G_IO_IN, sdi);
+	appadmm_receive(0, G_IO_IN, sdi);
+	appadmm_receive(0, G_IO_IN, sdi);
+	*/
+	
+	devc->blocking = FALSE;
+	
+	sr_err("All over.");
 	
 	devices = NULL;
 	
@@ -155,13 +201,11 @@ static int config_list(uint32_t key, GVariant **data,
 {
 	int ret;
 
-	(void)sdi;
-	(void)data;
-	(void)cg;
-
 	ret = SR_OK;
 	switch (key) {
-	/* TODO */
+	case SR_CONF_SCAN_OPTIONS:
+	case SR_CONF_DEVICE_OPTIONS:
+		return STD_CONFIG_LIST(key, data, sdi, cg, scanopts, drvopts, devopts);
 	default:
 		return SR_ERR_NA;
 	}

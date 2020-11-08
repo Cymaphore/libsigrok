@@ -1505,6 +1505,7 @@ struct sr_serial_dev_inst {
 		SER_BT_CONN_BLE122,	/**!< BLE, BLE122 module, indications */
 		SER_BT_CONN_NRF51,	/**!< BLE, Nordic nRF51, notifications */
 		SER_BT_CONN_CC254x,	/**!< BLE, TI CC254x, notifications */
+		SER_BT_CONN_APPADMM,	/**!< BLE, APPA-DMM, notifications */
 		SER_BT_CONN_MAX,	/**!< sentinel */
 	} bt_conn_type;
 	char *bt_addr_local;

@@ -226,10 +226,12 @@ SR_PRIV int appadmm_send(const struct sr_dev_inst *sdi, const struct appadmm_fra
 SR_PRIV int appadmm_process(const struct sr_dev_inst *sdi, const struct appadmm_frame_s *arg_frame) {
 	switch (arg_frame->command) {
 		
+	case APPADMM_COMMAND_READ_INFORMATION:
+		return appadmm_response_read_information(sdi, &arg_frame->response.read_information);
+		
 	case APPADMM_COMMAND_READ_DISPLAY:
 		return appadmm_response_read_display(sdi, &arg_frame->response.read_display);
 		
-	case APPADMM_COMMAND_READ_INFORMATION:
 	case APPADMM_COMMAND_READ_PROTOCOL_VERSION:
 	case APPADMM_COMMAND_READ_BATTERY_LIFE:
 	case APPADMM_COMMAND_CAL_READING:
@@ -275,15 +277,18 @@ SR_PRIV int appadmm_receive(int fd, int revents, void *cb_data)
 	buf[3] = 0;
 
 	if (!(sdi = cb_data))
-		return TRUE;
+		return SR_ERR_ARG;
 
 	if (!(devc = sdi->priv))
-		return TRUE;
+		return SR_ERR_ARG;
 
 	serial = sdi->conn;
 	
 	if (revents == G_IO_IN) {
-		len = serial_read_nonblocking(serial, buf, sizeof(buf));
+		if (devc->blocking)
+			len = serial_read_blocking(serial, buf, sizeof(buf), 150);
+		else
+			len = serial_read_nonblocking(serial, buf, sizeof(buf));
 		if (len < 0)
 			return len;
 		for (xloop = 0; xloop < len; xloop++) {
@@ -298,10 +303,11 @@ SR_PRIV int appadmm_receive(int fd, int revents, void *cb_data)
 					continue;
 				}
 			} else if (devc->recv_buffer_len < 3) {
-				if (appadmm_frame_response_size(buf[xloop]) > -1) {
+				if (appadmm_frame_response_size(buf[xloop]) < 0) {
 					appadmm_buffer_reset(devc);
 					continue;
 				}
+				sr_err("~~~~~~~~~ COMMAND RESPONSE: %i", (int)buf[xloop]);
 			} else if (devc->recv_buffer_len < 4) {
 				if (appadmm_is_response_frame_data_size_valid(buf[xloop - 1], buf[xloop]) != SR_OK) {
 					appadmm_buffer_reset(devc);
@@ -310,10 +316,12 @@ SR_PRIV int appadmm_receive(int fd, int revents, void *cb_data)
 			}
 			devc->recv_buffer[devc->recv_buffer_len++] = buf[xloop];
 			if (devc->recv_buffer_len > 4) {
-				if (devc->recv_buffer[3] == devc->recv_buffer_len) {
+				if (devc->recv_buffer[3] + APPADMM_FRAME_HEADER_SIZE + APPADMM_FRAME_CHECKSUM_SIZE == devc->recv_buffer_len) {
+					sr_err("DECODING COMMAND FRAME");
 					retr = appadmm_frame_decode(devc->recv_buffer, devc->recv_buffer_len, &frame);
 					
 					if(retr == SR_OK) {
+						sr_err("PROCESSING COMMAND FRAME");
 						retr = appadmm_process(sdi, &frame);
 					}
 
@@ -362,7 +370,11 @@ static int appadmm_frame_encode(const struct appadmm_frame_s *arg_frame, uint8_t
 	
 	switch (arg_frame->command) {
 	
+	case APPADMM_COMMAND_READ_INFORMATION:
 	case APPADMM_COMMAND_READ_DISPLAY:
+	case APPADMM_COMMAND_READ_PROTOCOL_VERSION:
+	case APPADMM_COMMAND_READ_BATTERY_LIFE:
+	case APPADMM_COMMAND_CAL_READING:
 		break;
 	
 	default:
@@ -377,6 +389,74 @@ static int appadmm_frame_encode(const struct appadmm_frame_s *arg_frame, uint8_t
 	return SR_OK;
 }
 
+static int appadmm_frame_decode_read_information(const uint8_t **rdptr, struct appadmm_response_data_read_information_s* arg_data)
+{
+	uint8_t u8;
+	int xloop;
+	char* ltr;
+	
+	arg_data->model_name[0] = 0;
+	arg_data->serial_number[0] = 0;
+	arg_data->firmware_version = 0;
+	arg_data->model_id = 0;
+	
+	ltr = &arg_data->model_name[0];
+	for (xloop = 0; xloop < 32; xloop++) {
+		*ltr = read_u8_inc(&*rdptr);
+		ltr++;
+	}
+	arg_data->model_name[sizeof(arg_data->model_name)] = 0;
+	g_strstrip(arg_data->model_name);
+	
+	ltr = &arg_data->serial_number[0];
+	for (xloop = 0; xloop < 16; xloop++) {
+		*ltr = read_u8_inc(&*rdptr);
+		ltr++;
+	}
+	arg_data->serial_number[sizeof(arg_data->serial_number)] = 0;
+	g_strstrip(arg_data->serial_number);
+
+	arg_data->model_id = read_u16le_inc(&*rdptr);
+	arg_data->firmware_version = read_u16le_inc(&*rdptr);
+
+	return SR_OK;
+}
+
+static int appadmm_frame_decode_read_display(const uint8_t **rdptr, struct appadmm_response_data_read_display_s* arg_data)
+{
+	uint8_t u8;
+	
+	u8 = read_u8_inc(&*rdptr);
+	arg_data->function_code = u8 & 0x7f;
+	arg_data->auto_test = u8 >> 7;
+
+	u8 = read_u8_inc(&*rdptr);
+	arg_data->range_code = u8 & 0x7f;
+	arg_data->auto_range = u8 >> 7;
+
+	arg_data->main_display_data.reading = read_i24le_inc(&*rdptr);
+
+	u8 = read_u8_inc(&*rdptr);
+	arg_data->main_display_data.dot = u8 & 0x7;
+	arg_data->main_display_data.unit = u8 >> 3;
+
+	u8 = read_u8_inc(&*rdptr);
+	arg_data->main_display_data.data_content = u8 & 0x7f;
+	arg_data->main_display_data.overload = u8 >> 7;
+
+	arg_data->sub_display_data.reading = read_i24le_inc(&*rdptr);
+
+	u8 = read_u8_inc(&*rdptr);
+	arg_data->sub_display_data.dot = u8 & 0x7;
+	arg_data->sub_display_data.unit = u8 >> 3;
+
+	u8 = read_u8_inc(&*rdptr);
+	arg_data->sub_display_data.data_content = u8 & 0x7f;
+	arg_data->sub_display_data.overload = u8 >> 7;
+	
+	return SR_OK;
+}
+
 static int appadmm_frame_decode(const uint8_t *arg_data, int arg_size, struct appadmm_frame_s *arg_out_frame)
 {
 	const uint8_t *rdptr;
@@ -384,6 +464,7 @@ static int appadmm_frame_decode(const uint8_t *arg_data, int arg_size, struct ap
 	uint16_t u16;
 	
 	int size;
+	int retr;
 	
 	if (arg_out_frame == NULL
 		|| arg_data == NULL) {
@@ -408,37 +489,21 @@ static int appadmm_frame_decode(const uint8_t *arg_data, int arg_size, struct ap
 	
 	switch (arg_out_frame->command) {
 		
+	case APPADMM_COMMAND_READ_INFORMATION:
+		if (size != APPADMM_FRAME_DATA_SIZE_RESPONSE_READ_INFORMATION)
+			return SR_ERR_DATA;
+		retr = appadmm_frame_decode_read_information(&rdptr, &arg_out_frame->response.read_information);
+		if (retr != SR_OK)
+			return retr;
+		
+		break;
+		
 	case APPADMM_COMMAND_READ_DISPLAY:
 		if (size != APPADMM_FRAME_DATA_SIZE_RESPONSE_READ_DISPLAY)
 			return SR_ERR_DATA;
-		
-		u8 = read_u8_inc(&rdptr);
-		arg_out_frame->response.read_display.function_code = u8 & 0x7f;
-		arg_out_frame->response.read_display.auto_test = u8 >> 7;
-		
-		u8 = read_u8_inc(&rdptr);
-		arg_out_frame->response.read_display.range_code = u8 & 0x7f;
-		arg_out_frame->response.read_display.auto_range = u8 >> 7;
-		
-		arg_out_frame->response.read_display.main_display_data.reading = read_i24le_inc(&rdptr);
-		
-		u8 = read_u8_inc(&rdptr);
-		arg_out_frame->response.read_display.main_display_data.dot = u8 & 0x7;
-		arg_out_frame->response.read_display.main_display_data.unit = u8 >> 3;
-		 /* allow overflow by 1 to kill bad frames */
-		u8 = read_u8_inc(&rdptr);
-		arg_out_frame->response.read_display.main_display_data.data_content = u8 & 0x7f;
-		arg_out_frame->response.read_display.main_display_data.overload = u8 >> 7;
-		
-		arg_out_frame->response.read_display.sub_display_data.reading = read_i24le_inc(&rdptr);
-		
-		u8 = read_u8_inc(&rdptr);
-		arg_out_frame->response.read_display.sub_display_data.dot = u8 & 0x7;
-		arg_out_frame->response.read_display.sub_display_data.unit = u8 >> 3;
-		
-		u8 = read_u8_inc(&rdptr);
-		arg_out_frame->response.read_display.sub_display_data.data_content = u8 & 0x7f;
-		arg_out_frame->response.read_display.sub_display_data.overload = u8 >> 7;
+		retr = appadmm_frame_decode_read_display(&rdptr, &arg_out_frame->response.read_display);
+		if (retr != SR_OK)
+			return retr;
 		
 		break;
 		
@@ -450,8 +515,6 @@ static int appadmm_frame_decode(const uint8_t *arg_data, int arg_size, struct ap
 	u8 = read_u8_inc(&rdptr);
 	if (u8 != appadmm_checksum(arg_data, size + APPADMM_FRAME_HEADER_SIZE))
 		return SR_ERR_DATA;
-	
-	/** @TODO dump btle extra bytes? */
 	
 	return SR_OK;
 }
@@ -635,6 +698,40 @@ static const char *appadmm_wordcode_name(const enum appadmm_wordcode_e arg_wordc
 	}
 
 	return APPADMM_STRING_NA;
+}
+
+static int appadmm_response_read_information(const struct sr_dev_inst *sdi, const struct appadmm_response_data_read_information_s *arg_data)
+{
+	struct dev_context *devc;
+	struct sr_dev_inst *sdi_w;
+	
+	int retr;
+	char* delim;
+	
+	devc = sdi->priv;
+	sdi_w = (struct sr_dev_inst*)sdi;
+	
+	delim = NULL;
+	
+	if (arg_data->model_name[0] != 0)
+		delim = g_strrstr(arg_data->model_name, " ");
+	
+	if (delim == NULL) {
+		sdi_w->vendor = g_strdup("APPA");
+		sdi_w->model = g_strdup(arg_data->model_name);
+	} else {
+		sdi_w->model = g_strdup(delim+1);
+		sdi_w->vendor = g_strndup(arg_data->model_name, strlen(arg_data->model_name)-strlen(sdi->model)-1);
+	}
+	
+	sdi_w->version = g_strdup_printf("%01d.%02d",
+		arg_data->firmware_version / 100,
+		arg_data->firmware_version % 100);
+	devc->model_id = arg_data->model_id;
+	
+	retr = SR_OK;
+	
+	return retr;
 }
 
 static int appadmm_response_read_display(const struct sr_dev_inst *sdi, const struct appadmm_response_data_read_display_s *arg_data)

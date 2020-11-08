@@ -121,6 +121,12 @@ enum appadmm_connection_type_e {
 	APPADMM_CONNECTION_TYPE_BLE = 0x02,
 };
 
+enum appadmm_frame_type_e {
+	APPADMM_FRAME_TYPE_INVALID = 0x00,
+	APPADMM_FRAME_TYPE_REQUEST = 0x01,
+	APPADMM_FRAME_TYPE_RESPONSE = 0x02,
+};
+
 /**
  * Possible commands.
  * Calibration and configuration commands not included yet.
@@ -144,7 +150,7 @@ enum appadmm_command_e {
 	APPADMM_COMMAND_OTA_ENTER = 0xa0, /**< Enter OTA mode */
 	APPADMM_COMMAND_OTA_SEND_INFORMATION = 0xa1, /**< Send OTA information */
 	APPADMM_COMMAND_OTA_SEND_FIRMWARE_PACKAGE = 0xa2, /**< Send OTA Firmware package */
-	APPADMM_COMMAND_OTA_START_UPGRADE_PROCEDURE = 0xa3, /**<  */
+	APPADMM_COMMAND_OTA_START_UPGRADE_PROCEDURE = 0xa3, /**< Start Upgrade-Procedure */
 };
 
 /**
@@ -658,6 +664,8 @@ struct appadmm_frame_s {
 
 struct dev_context {
 	enum appadmm_connection_type_e connection_type;
+	gboolean blocking;
+	enum appadmm_model_id_e model_id;
 	uint8_t recv_buffer[APPADMM_FRAME_MAX_SIZE];
 	uint8_t recv_buffer_len;
 };
@@ -694,9 +702,14 @@ SR_PRIV int appadmm_receive(int fd, int revents, void *cb_data);
 
 static int appadmm_frame_encode(const struct appadmm_frame_s *arg_frame, uint8_t *arg_out_data, int arg_size, int *arg_out_size);
 
+static int appadmm_frame_decode_read_information(const uint8_t **rdptr, struct appadmm_response_data_read_information_s* arg_data);
+static int appadmm_frame_decode_read_display(const uint8_t **rdptr, struct appadmm_response_data_read_display_s* arg_data);
+
 static int appadmm_frame_decode(const uint8_t *arg_data, int arg_size, struct appadmm_frame_s *arg_out_frame);
 
 SR_PRIV int appadmm_receive(int fd, int revents, void *cb_data);
+
+static int appadmm_response_read_information(const struct sr_dev_inst *sdi, const struct appadmm_response_data_read_information_s *arg_data);
 
 static int appadmm_response_read_display(const struct sr_dev_inst *sdi, const struct appadmm_response_data_read_display_s *arg_data);
 

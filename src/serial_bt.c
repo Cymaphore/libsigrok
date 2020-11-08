@@ -55,7 +55,38 @@ static const struct scan_supported_item {
 	/* Guess connection types from device names (useful for scans). */
 	{ "121GW", SER_BT_CONN_BLE122, },
 	{ "Adafruit Bluefruit LE 8134", SER_BT_CONN_NRF51, },
+	/* APPA-DMM based identifiers {{{ */
 	{ "HC-05", SER_BT_CONN_RFCOMM, },
+	{ "APPA 155B", SER_BT_CONN_APPADMM, },
+	{ "APPA 156B", SER_BT_CONN_APPADMM, },
+	{ "APPA 157B", SER_BT_CONN_APPADMM, },
+	{ "APPA 158B", SER_BT_CONN_APPADMM, },
+	{ "APPA 172B", SER_BT_CONN_APPADMM, },
+	{ "APPA 173B", SER_BT_CONN_APPADMM, },
+	{ "APPA 175B", SER_BT_CONN_APPADMM, },
+	{ "APPA 177B", SER_BT_CONN_APPADMM, },
+	{ "APPA 179B", SER_BT_CONN_APPADMM, },
+	{ "APPA 208B", SER_BT_CONN_APPADMM, },
+	{ "APPA 506B", SER_BT_CONN_APPADMM, },
+	{ "APPA A17N", SER_BT_CONN_APPADMM, },
+	{ "APPA S0", SER_BT_CONN_APPADMM, },
+	{ "APPA S1", SER_BT_CONN_APPADMM, },
+	{ "APPA S2", SER_BT_CONN_APPADMM, },
+	{ "APPA S3", SER_BT_CONN_APPADMM, },
+	{ "APPA sFlex-10A", SER_BT_CONN_APPADMM, },
+	{ "APPA sFlex-18A", SER_BT_CONN_APPADMM, },
+	{ "BENNING CM9-2", SER_BT_CONN_APPADMM, },
+	{ "BENNING CM10-1", SER_BT_CONN_APPADMM, },
+	{ "BENNING CM10-PV", SER_BT_CONN_APPADMM, },
+	{ "BENNING CM12", SER_BT_CONN_APPADMM, },
+	{ "BENNING MM10-1", SER_BT_CONN_APPADMM, },
+	{ "BENNING MM10-PV", SER_BT_CONN_APPADMM, },
+	{ "BENNING MM12", SER_BT_CONN_APPADMM, },
+	{ "RSPRO S1", SER_BT_CONN_APPADMM, },
+	{ "RSPRO S2", SER_BT_CONN_APPADMM, },
+	{ "RSPRO S3", SER_BT_CONN_APPADMM, },
+	{ "Sefram 7352B", SER_BT_CONN_APPADMM, },
+	/* }}} */
 	{ NULL, SER_BT_CONN_UNKNOWN, },
 };
 
@@ -65,6 +96,7 @@ static const char *ser_bt_conn_names[SER_BT_CONN_MAX] = {
 	[SER_BT_CONN_BLE122] = "ble122",
 	[SER_BT_CONN_NRF51] = "nrf51",
 	[SER_BT_CONN_CC254x] = "cc254x",
+	[SER_BT_CONN_APPADMM] = "appa-b",
 };
 
 static enum ser_bt_conn_t lookup_conn_name(const char *name)
@@ -214,6 +246,16 @@ static int ser_bt_parse_conn_spec(
 		if (cccd_val)
 			*cccd_val = 0x0003;
 		break;
+	case SER_BT_CONN_APPADMM:
+		if (read_hdl)
+			*read_hdl = 0x49;
+		if (write_hdl)
+			*write_hdl = 0x4c;
+		if (cccd_hdl)
+			*cccd_hdl = 0x4a;
+		if (cccd_val)
+			*cccd_val = 0x0001;
+		break;
 	case SER_BT_CONN_NRF51:
 		/* TODO
 		 * Are these values appropriate? Check the learn article at
@@ -348,6 +390,7 @@ static int ser_bt_open(struct sr_serial_dev_inst *serial, int flags)
 		serial->bt_rfcomm_channel = rfcomm_channel;
 		break;
 	case SER_BT_CONN_BLE122:
+	case SER_BT_CONN_APPADMM:
 	case SER_BT_CONN_NRF51:
 	case SER_BT_CONN_CC254x:
 		rc = sr_bt_config_notify(desc,
@@ -379,6 +422,7 @@ static int ser_bt_open(struct sr_serial_dev_inst *serial, int flags)
 		if (rc < 0)
 			return SR_ERR;
 		break;
+	case SER_BT_CONN_APPADMM:
 	case SER_BT_CONN_BLE122:
 	case SER_BT_CONN_NRF51:
 	case SER_BT_CONN_CC254x:
@@ -455,6 +499,7 @@ static int ser_bt_write(struct sr_serial_dev_inst *serial,
 		if (wrlen < 0)
 			return SR_ERR_IO;
 		return wrlen;
+	case SER_BT_CONN_APPADMM:
 	case SER_BT_CONN_BLE122:
 	case SER_BT_CONN_NRF51:
 	case SER_BT_CONN_CC254x:
@@ -521,6 +566,7 @@ static int ser_bt_read(struct sr_serial_dev_inst *serial,
 			if (rc < 0)
 				rdlen = -1;
 			break;
+		case SER_BT_CONN_APPADMM:
 		case SER_BT_CONN_BLE122:
 		case SER_BT_CONN_NRF51:
 		case SER_BT_CONN_CC254x:
@@ -618,6 +664,7 @@ static int bt_source_cb(int fd, int revents, void *cb_data)
 			if (rc < 0)
 				rdlen = -1;
 			break;
+		case SER_BT_CONN_APPADMM:
 		case SER_BT_CONN_BLE122:
 		case SER_BT_CONN_NRF51:
 		case SER_BT_CONN_CC254x:
