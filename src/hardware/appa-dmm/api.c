@@ -17,6 +17,21 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+/**
+ * @file
+ * @version 1
+ *
+ * APPA B Interface
+ *
+ * Based on APPA Communication Protocol v2.8
+ *
+ * Driver for modern APPA meters (handheld, bench, clamp). Communication is
+ * done over a serial interface using the known APPA-Frames, see below. The
+ * base protocol is always the same and deviates only where the models have
+ * differences in ablities, range and features.
+ *
+ */
+
 #include <config.h>
 #include "protocol.h"
 #include "scpi/vxi.h"
@@ -36,7 +51,7 @@ static const uint32_t devopts[] = {
 	SR_CONF_LIMIT_MSEC | SR_CONF_GET | SR_CONF_SET,
 };
 
-static GSList *scan(struct sr_dev_driver *di, GSList *options)
+static GSList *appadmm_scan(struct sr_dev_driver *di, GSList *options)
 {
 	struct drv_context *drvc;
 	struct appadmm_context *devc;
@@ -45,7 +60,9 @@ static GSList *scan(struct sr_dev_driver *di, GSList *options)
 	const char *serialcomm;
 	struct sr_dev_inst *sdi;
 	struct sr_serial_dev_inst *serial;
-	
+
+	int retr;
+
 	GSList *it;
 	struct sr_config *src;
 	struct appadmm_frame_s frame;
@@ -55,10 +72,10 @@ static GSList *scan(struct sr_dev_driver *di, GSList *options)
 	drvc = di->context;
 	drvc->instances = NULL;
 
+	/* Device context is used instead of another ..._info struct here */
 	devc = g_malloc0(sizeof(struct appadmm_context));
-	/// @TODO why does it segf?
-	//appadmm_clear_context(&devc);
-	
+	appadmm_clear_context(devc);
+
 	serialcomm = APPADMM_CONF_SERIAL;
 	conn = NULL;
 	for (it = options; it; it = it->next) {
@@ -72,34 +89,37 @@ static GSList *scan(struct sr_dev_driver *di, GSList *options)
 			break;
 		}
 	}
-	
+
 	if (!conn)
 		return NULL;
+
 	if (!serialcomm)
 		serialcomm = APPADMM_CONF_SERIAL;
-	
+
 	devc->connection_type = APPADMM_CONNECTION_TYPE_SERIAL;
-	
+
 	if (conn != NULL)
 		if (strncmp(conn, "bt/", 3) == 0)
 			devc->connection_type = APPADMM_CONNECTION_TYPE_BLE;
 
 	serial = sr_serial_dev_inst_new(conn, serialcomm);
-	
+
 	if (serial_open(serial, SERIAL_RDWR) != SR_OK)
 		return NULL;
-	
+
 	sdi = g_malloc0(sizeof(*sdi));
-	
+
 	sdi->conn = serial;
 	sdi->inst_type = SR_INST_SERIAL;
 	sdi->status = SR_ST_INACTIVE;
 	sdi->driver = di;
 	sdi->priv = devc;
-	
+
+	/* Scan for devices by sendind READ_INFORMATION */
 	frame.command = APPADMM_COMMAND_READ_INFORMATION;
 	appadmm_send(sdi, &frame);
-	
+
+	/* Wait for READ_INFORMATION */
 	handshake_cycles = APPADMM_HANDSHAKE_TIMEOUT / APPADMM_READ_BLOCKING_TIMEOUT;
 	while (handshake_cycles-- > 0) {
 		appadmm_receive(sdi, TRUE);
@@ -107,14 +127,15 @@ static GSList *scan(struct sr_dev_driver *di, GSList *options)
 			break;
 		}
 	};
-	
+
+	/* If received model is invalid or nothing received, abort */
 	if (devc->model_id == APPADMM_MODEL_ID_INVALID) {
 		sr_err("APPA-Device NOT FOUND; No valid response to read_information request.");
 		sr_serial_dev_inst_free(serial);
 		serial_close(serial);
 		return NULL;
 	}
-	
+
 	sr_warn("APPA-Device DETECTED; Vendor: %s, Model: %s, APPA-Model: %s, Version: %s, Serial number: %s, Model ID: %i",
 		sdi->vendor,
 		sdi->model,
@@ -122,56 +143,36 @@ static GSList *scan(struct sr_dev_driver *di, GSList *options)
 		sdi->version,
 		sdi->serial_num,
 		devc->model_id);
-	
-	//sr_channel_new(sdi, APPADMM_CHANNEL_TIMESTAMP, SR_CHANNEL_ANALOG, TRUE, appadmm_channel_name(APPADMM_CHANNEL_TIMESTAMP));
-	sr_channel_new(sdi, APPADMM_CHANNEL_MAIN, SR_CHANNEL_ANALOG, TRUE, appadmm_channel_name(APPADMM_CHANNEL_MAIN));
-	sr_channel_new(sdi, APPADMM_CHANNEL_SUB, SR_CHANNEL_ANALOG, TRUE, appadmm_channel_name(APPADMM_CHANNEL_SUB));
-	
+
+	sr_channel_new(sdi, APPADMM_CHANNEL_MAIN, SR_CHANNEL_ANALOG, appadmm_cap_channel(devc->model_id, APPADMM_CHANNEL_MAIN), appadmm_channel_name(APPADMM_CHANNEL_MAIN));
+	sr_channel_new(sdi, APPADMM_CHANNEL_SUB, SR_CHANNEL_ANALOG, appadmm_cap_channel(devc->model_id, APPADMM_CHANNEL_SUB), appadmm_channel_name(APPADMM_CHANNEL_SUB));
+
 	devices = g_slist_append(devices, sdi);
-	
-	serial_close(serial);
-	
+
+	retr = serial_close(serial);
+	if (retr != SR_OK) {
+		sr_err("Unable to close device after scan");
+		return NULL;
+	}
+
 	return std_scan_complete(di, devices);
 }
 
-#if 0
-
-static int dev_open(struct sr_dev_inst *sdi)
-{
-	(void)sdi;
-
-	/* TODO: get handle from sdi->conn and open it. */
-
-	return SR_OK;
-}
-
-static int dev_close(struct sr_dev_inst *sdi)
-{
-	(void)sdi;
-
-	/* TODO: get handle from sdi->conn and close it. */
-
-	return SR_OK;
-}
-
-#endif//1|0
-
-static int config_get(uint32_t key, GVariant **data,
+static int appadmm_config_get(uint32_t key, GVariant **data,
 	const struct sr_dev_inst *sdi, const struct sr_channel_group *cg)
 {
 	struct appadmm_context *devc;
-	
-	int ret;
+
+	int retr;
+
+	(void) cg;
 
 	if (!sdi)
 		return SR_ERR_ARG;
-	
-	devc = sdi->priv;
-	
-	(void)data;
-	(void)cg;
 
-	ret = SR_OK;
+	devc = sdi->priv;
+
+	retr = SR_OK;
 	switch (key) {
 	case SR_CONF_LIMIT_SAMPLES:
 	case SR_CONF_LIMIT_FRAMES:
@@ -181,46 +182,42 @@ static int config_get(uint32_t key, GVariant **data,
 		return SR_ERR_NA;
 	}
 
-	return ret;
+	return retr;
 }
 
-static int config_set(uint32_t key, GVariant *data,
+static int appadmm_config_set(uint32_t key, GVariant *data,
 	const struct sr_dev_inst *sdi, const struct sr_channel_group *cg)
 {
 	struct appadmm_context *devc;
-	
-	int ret;
+
+	int retr;
+
+	(void) cg;
 
 	if (!sdi)
 		return SR_ERR_ARG;
-	
+
 	devc = sdi->priv;
-	
-	(void)data;
-	(void)cg;
 
-	(void)data;
-	(void)cg;
-
-	ret = SR_OK;
+	retr = SR_OK;
 	switch (key) {
 	case SR_CONF_LIMIT_SAMPLES:
 	case SR_CONF_LIMIT_FRAMES:
 	case SR_CONF_LIMIT_MSEC:
 		return sr_sw_limits_config_set(&devc->limits, key, data);
 	default:
-		ret = SR_ERR_NA;
+		retr = SR_ERR_NA;
 	}
 
-	return ret;
+	return retr;
 }
 
-static int config_list(uint32_t key, GVariant **data,
+static int appadmm_config_list(uint32_t key, GVariant **data,
 	const struct sr_dev_inst *sdi, const struct sr_channel_group *cg)
 {
-	int ret;
+	int retr;
 
-	ret = SR_OK;
+	retr = SR_OK;
 
 	if (!sdi)
 		return STD_CONFIG_LIST(key, data, sdi, cg, scanopts, drvopts, devopts);
@@ -233,40 +230,29 @@ static int config_list(uint32_t key, GVariant **data,
 		return SR_ERR_NA;
 	}
 
-	return ret;
-}
-
-static int dev_acquisition_start(const struct sr_dev_inst *sdi)
-{
-	struct appadmm_context *devc;
-	struct sr_serial_dev_inst *serial;
-	
-	int retr;
-	
-	devc = sdi->priv;
-	serial = sdi->conn;
-	
-	sr_sw_limits_acquisition_start(&devc->limits);
-	retr = std_session_send_df_header(sdi);
-	if(retr != SR_OK)
-		return retr;
-	
-	retr = serial_source_add(sdi->session, serial, G_IO_IN, 10,
-			appadmm_receive_serial, (void *)sdi);
-
 	return retr;
 }
 
-#if 0
-
-static int dev_acquisition_stop(struct sr_dev_inst *sdi)
+static int appadmm_acquisition_start(const struct sr_dev_inst *sdi)
 {
-	(void)sdi;
+	struct appadmm_context *devc;
+	struct sr_serial_dev_inst *serial;
 
-	return SR_OK;
+	int retr;
+
+	devc = sdi->priv;
+	serial = sdi->conn;
+
+	sr_sw_limits_acquisition_start(&devc->limits);
+	retr = std_session_send_df_header(sdi);
+	if (retr != SR_OK)
+		return retr;
+
+	retr = serial_source_add(sdi->session, serial, G_IO_IN, 10,
+		appadmm_serial_receive, (void *) sdi);
+
+	return retr;
 }
-
-#endif//1|0
 
 #define APPADMM_DRIVER_ENTRY(ARG_NAME, ARG_LONGNAME) \
 &((struct sr_dev_driver){ \
@@ -275,15 +261,15 @@ static int dev_acquisition_stop(struct sr_dev_inst *sdi)
 	.api_version = 1, \
 	.init = std_init, \
 	.cleanup = std_cleanup, \
-	.scan = scan, \
+	.scan = appadmm_scan, \
 	.dev_list = std_dev_list, \
 	.dev_clear = std_dev_clear, \
-	.config_get = config_get, \
-	.config_set = config_set, \
-	.config_list = config_list, \
+	.config_get = appadmm_config_get, \
+	.config_set = appadmm_config_set, \
+	.config_list = appadmm_config_list, \
 	.dev_open = std_serial_dev_open, \
 	.dev_close = std_serial_dev_close, \
-	.dev_acquisition_start = dev_acquisition_start, \
+	.dev_acquisition_start = appadmm_acquisition_start, \
 	.dev_acquisition_stop = std_serial_dev_acquisition_stop, \
 	.context = NULL, \
 })
@@ -298,4 +284,4 @@ SR_REGISTER_DEV_DRIVER_LIST(appadmm_drivers,
 	APPADMM_DRIVER_ENTRY("sefram-7xxx", "Sefram 7xxx Series"),
 	APPADMM_DRIVER_ENTRY("voltcraft-vc930", "Voltcraft VC-930"),
 	APPADMM_DRIVER_ENTRY("voltcraft-vc950", "Voltcraft VC-950"),
-);
+	);

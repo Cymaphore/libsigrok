@@ -150,7 +150,7 @@ static const char *conn_name_text(enum ser_bt_conn_t type)
  * - Insist on the "bt" prefix. Accept "bt" alone without any other
  *   additional field.
  * - The first field that follows is the connection type. Supported
- *   types are 'rfcomm', 'ble122', 'cc254x', and potentially others
+ *   types are 'rfcomm', 'ble122', 'cc254x', 'appa-dmm' and potentially others
  *   in a future implementation.
  * - The next field is the remote device's address, either separated
  *   by colons or dashes or spaces, or not separated at all.
@@ -165,6 +165,7 @@ static const char *conn_name_text(enum ser_bt_conn_t type)
  *   bt/rfcomm/11-22-33-44-55-66
  *   bt/ble122/88:6b:12:34:56:78
  *   bt/cc254x/0123456789ab
+ *   bt/appa-dmm/88:6b:12:34:56:78
  *
  * It's assumed that users easily can create those conn= specs from
  * available information, or that scan routines will create such specs

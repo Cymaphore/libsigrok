@@ -42,21 +42,70 @@
 
 #define LOG_PREFIX "appa-dmm"
 
+/* ************************************ */
+/* ****** Built-in configuration ****** */
+/* ************************************ */
+
+/**
+ * Timeout of Handshake (read information)
+ * when scanning (ms)
+ */
 #define APPADMM_HANDSHAKE_TIMEOUT 1000
+
+/**
+ * Timeout when writing blocking (ms)
+ */
 #define APPADMM_WRITE_BLOCKING_TIMEOUT 5
+
+/**
+ * Timeout when reading blocking (ms)
+ */
 #define APPADMM_READ_BLOCKING_TIMEOUT 64
 
+/**
+ * Default serial parameters
+ */
 #define APPADMM_CONF_SERIAL "9600/8n1"
 
+/* ********************* */
+/* ****** Presets ****** */
+/* ********************* */
+
+/**
+ * Used for unavailable / undecodable strings
+ */
 #define APPADMM_STRING_NA "N/A"
 
+/**
+ * String representation of "OL"-readings
+ */
 #define APPADMM_READING_TEXT_OL "OL"
 
+/* **************************************** */
+/* ****** Message frame definitiions ****** */
+/* **************************************** */
+
+/**
+ * Size of APPA message header
+ */
 #define APPADMM_FRAME_HEADER_SIZE 4
+
+/**
+ * Size of APPA message checksum
+ */
 #define APPADMM_FRAME_CHECKSUM_SIZE 1
+
+/**
+ * Maximum possible data size in a frame
+ */
 #define APPADMM_FRAME_MAX_DATA_SIZE 64
+
+/**
+ * Maximum possible frame size
+ */
 #define APPADMM_FRAME_MAX_SIZE (APPADMM_FRAME_MAX_DATA_SIZE+APPADMM_FRAME_HEADER_SIZE+APPADMM_FRAME_CHECKSUM_SIZE)
 
+/* Size of request frame data per command */
 #define APPADMM_FRAME_DATA_SIZE_REQUEST_READ_INFORMATION 0
 #define APPADMM_FRAME_DATA_SIZE_REQUEST_READ_DISPLAY 0
 #define APPADMM_FRAME_DATA_SIZE_REQUEST_READ_PROTOCOL_VERSION 0
@@ -75,6 +124,7 @@
 #define APPADMM_FRAME_DATA_SIZE_REQUEST_OTA_SEND_FIRMWARE_PACKAGE 64 /* variable (max) */
 #define APPADMM_FRAME_DATA_SIZE_REQUEST_OTA_START_UPGRADE_PROCEDURE 1
 
+/* Size of response frame data per command */
 #define APPADMM_FRAME_DATA_SIZE_RESPONSE_READ_INFORMATION 52
 #define APPADMM_FRAME_DATA_SIZE_RESPONSE_READ_DISPLAY 12
 #define APPADMM_FRAME_DATA_SIZE_RESPONSE_READ_PROTOCOL_VERSION 4
@@ -87,7 +137,8 @@
 
 /**
  * Begin of word codes (minimum value)
- * All readings on a display higher than that are some sort of wordcode, resolvable or not
+ * All readings on a display higher than that are some sort of wordcode,
+ * resolvable or not
  */
 #define APPADMM_WORDCODE_TABLE_MIN 0x700000
 
@@ -97,32 +148,45 @@
 #define APPADMM_FRAME_START_VALUE 0x5555
 
 /**
- * Start code of valid frame byte part
+ * Start code of valid frame, byte part
  */
 #define APPADMM_FRAME_START_VALUE_BYTE 0x55
 
-/* ************************** */
-/* ****** Enumerations ****** */
-/* ************************** */
+/* **************************************** */
+/* ****** State machine enumerations ****** */
+/* **************************************** */
 
+/**
+ * Type of connection
+ * saved in context
+ */
 enum appadmm_connection_type_e {
 	APPADMM_CONNECTION_TYPE_INVALID = 0x00,
 	APPADMM_CONNECTION_TYPE_SERIAL = 0x01,
 	APPADMM_CONNECTION_TYPE_BLE = 0x02,
 };
 
+/**
+ * Type of frame
+ */
 enum appadmm_frame_type_e {
 	APPADMM_FRAME_TYPE_INVALID = 0x00,
 	APPADMM_FRAME_TYPE_REQUEST = 0x01,
 	APPADMM_FRAME_TYPE_RESPONSE = 0x02,
 };
 
+/**
+ * Channel definition
+ */
 enum appadmm_channel_e {
 	APPADMM_CHANNEL_INVALID = -1,
-	//APPADMM_CHANNEL_TIMESTAMP = 0x00,
 	APPADMM_CHANNEL_MAIN = 0x00,
 	APPADMM_CHANNEL_SUB = 0x01,
 };
+
+/* **************************************** */
+/* ****** Message frame enumerations ****** */
+/* **************************************** */
 
 /**
  * Possible commands.
@@ -154,7 +218,6 @@ enum appadmm_command_e {
  * Currently supported models
  */
 enum appadmm_model_id_e {
-
 	/**
 	 * Invalid
 	 */
@@ -220,6 +283,7 @@ enum appadmm_model_id_e {
 	 * APPA S Series (BLE)
 	 * APPA S1
 	 * RS PRO S1
+	 * Sefram 7221
 	 */
 	APPADMM_MODEL_ID_S1 = 0x09,
 
@@ -236,6 +300,7 @@ enum appadmm_model_id_e {
 	 * APPA S3
 	 * BENNING MM 10-PV
 	 * RS PRO S3
+	 * Sefram 7223
 	 */
 	APPADMM_MODEL_ID_S3 = 0x0b,
 
@@ -287,6 +352,7 @@ enum appadmm_model_id_e {
 	/**
 	 * APPA S Series (BLE)
 	 * APPA S0
+	 * Sefram 7220
 	 */
 	APPADMM_MODEL_ID_S0 = 0x13,
 
@@ -317,13 +383,17 @@ enum appadmm_model_id_e {
 	/**
 	 * Unlisted / Unknown:
 	 *
-	 * APPA 500 Series (Optical RS232/USB) - EXPERIMENTAL
+	 * APPA 500 Series (Optical RS232/USB) - EXPERIMENTAL:
 	 * APPA 507
 	 * CMT 3507
 	 * HT Instruments HT8100
+	 * (possibly identifies itself as another 500)
 	 */
 };
 
+/**
+ * Possible Protocol IDs
+ */
 enum appadmm_protocol_id_e {
 	APPADMM_PROTOCOL_ID_INVALID = 0x00,
 	APPADMM_PROTOCOL_ID_APPA = 0x01,
@@ -373,7 +443,7 @@ enum appadmm_wordcode_e {
 	APPADMM_WORDCODE_ER2 = 0x700012, /**< Er2 */
 	APPADMM_WORDCODE_ER3 = 0x700013, /**< Er3 */
 	APPADMM_WORDCODE_DASH = 0x700014, /**< Dash (-----) */
-	APPADMM_WORDCODE_DASH1 = 0x700015, /**< Dash1  (-) */
+	APPADMM_WORDCODE_DASH1 = 0x700015, /**< Dash1 (-) */
 	APPADMM_WORDCODE_TEST = 0x700016, /**< Test */
 	APPADMM_WORDCODE_DASH2 = 0x700017, /**< Dash2 (--) */
 	APPADMM_WORDCODE_BATT = 0x700018, /**< Battery */
@@ -453,7 +523,6 @@ enum appadmm_dot_e {
 	APPADMM_DOT_999_99 = 0x02,
 	APPADMM_DOT_99_999 = 0x03,
 	APPADMM_DOT_9_9999 = 0x04,
-
 };
 
 /**
@@ -581,12 +650,21 @@ enum appadmm_functioncode_e {
 	APPADMM_FUNCTIONCODE_AC_DC_V_PV = 0x48,
 };
 
-/* ***************************** */
-/* ****** Data Structures ****** */
-/* ***************************** */
+/* ************************************************************ */
+/* ****** Structures representing payload of data frames ****** */
+/* ************************************************************ */
 
 /**
- * Display Data
+ * Frame Header
+ */
+struct appadmm_frame_header_s {
+	u_int16_t start; /**< Start code (0x5555) */
+	enum appadmm_command_e command; /**< Command */
+	uint8_t dataLength; /**< Length of Data */
+};
+
+/**
+ * Display Data in response to APPADMM_COMMAND_READ_DISPLAY
  */
 struct appadmm_display_data_s {
 	int32_t reading; /**< Measured value or wordcode in raw */
@@ -599,14 +677,8 @@ struct appadmm_display_data_s {
 };
 
 /**
- * Frame Header
+ * Request Data for APPADMM_COMMAND_READ_INFORMATION
  */
-struct appadmm_frame_header_s {
-	u_int16_t start; /**< Start code (0x5555) */
-	enum appadmm_command_e command; /**< Command */
-	uint8_t dataLength; /**< Length of Data */
-};
-
 struct appadmm_request_data_read_information_s {
 };
 
@@ -620,6 +692,9 @@ struct appadmm_response_data_read_information_s {
 	u_int16_t firmware_version; /*< Firmware version */
 };
 
+/**
+ * Request Data for APPADMM_COMMAND_READ_DISPLAY
+ */
 struct appadmm_request_data_read_display_s {
 };
 
@@ -637,71 +712,86 @@ struct appadmm_response_data_read_display_s {
 	struct appadmm_display_data_s sub_display_data; /**< Reading of sub (upper) display value */
 };
 
+/**
+ * Request Data for APPADMM_COMMAND_READ_PROTOCOL_VERSION
+ */
 struct appadmm_request_data_read_protocol_version_s {
 };
 
 /**
- * Response Data for APPADMM_COMMAND_READ_DISPLAY
+ * Response Data for APPADMM_COMMAND_READ_PROTOCOL_VERSION
  */
 struct appadmm_response_data_read_protocol_version_s {
-	enum appadmm_protocol_id_e protocol_id;
-	uint8_t major_protocol_version;
-	uint8_t minor_protocol_version;
+	enum appadmm_protocol_id_e protocol_id; /**< Protocol type ID */
+	uint8_t major_protocol_version; /**< Protocol major version */
+	uint8_t minor_protocol_version; /**< Protocol minor version */
 };
 
+/**
+ * Representation of communication frames
+ * As union for more robust / convenient handling
+ */
 struct appadmm_frame_s {
-	
 	enum appadmm_command_e command;
-	
+
 	union {
-		
+
 		union {
-			
 			struct appadmm_request_data_read_information_s read_information;
-			
 			struct appadmm_request_data_read_display_s read_display;
-			
 			struct appadmm_request_data_read_protocol_version_s read_protocol_version;
-			
 		} request;
-		
+
 		union {
-			
 			struct appadmm_response_data_read_information_s read_information;
-			
 			struct appadmm_response_data_read_display_s read_display;
-			
 			struct appadmm_response_data_read_protocol_version_s read_protocol_version;
-			
 		} response;
-		
 	};
-	
 };
 
+/* ************************************** */
+/* ****** State machine structures ****** */
+/* ************************************** */
+
+/**
+ * Context
+ * saved in sdi->priv and forwarded to all relevant functions
+ * similar to _info structure in other drivers
+ */
 struct appadmm_context {
-	enum appadmm_connection_type_e connection_type;
-	enum appadmm_model_id_e model_id;
-	enum appadmm_protocol_id_e protocol_id;
-	uint8_t major_protocol_version;
-	uint8_t minor_protocol_version;
-	struct sr_sw_limits limits;
-	gboolean request_active;
-	uint8_t recv_buffer[APPADMM_FRAME_MAX_SIZE];
-	uint8_t recv_buffer_len;
+	enum appadmm_model_id_e model_id; /**< Model identifier */
+
+	enum appadmm_connection_type_e connection_type; /**< Connection type */
+
+	enum appadmm_protocol_id_e protocol_id; /**< APPA Protocol Identifier */
+	uint8_t major_protocol_version; /**< APPA Protocol major version */
+	uint8_t minor_protocol_version; /**< APPA Protocol minor version */
+
+	struct sr_sw_limits limits; /**< Limits for data acquisition */
+
+	gboolean request_pending; /**< Active request blocker */
+	uint8_t recv_buffer[APPADMM_FRAME_MAX_SIZE]; /**< Reception buffer */
+	uint8_t recv_buffer_len; /**< Current number of valid frame bytes in buffer */
 };
 
-/* *********************** */
-/* ****** Functions ****** */
-/* *********************** */
+/* ***************************************** */
+/* ****** Declaration export to api.c ****** */
+/* ***************************************** */
 
+/* ****** Transmission / reception ****** */
+SR_PRIV int appadmm_send(const struct sr_dev_inst *arg_sdi, const struct appadmm_frame_s *arg_frame);
+SR_PRIV int appadmm_serial_receive(int arg_fd, int arg_revents, void *arg_cb_data);
+SR_PRIV int appadmm_receive(const struct sr_dev_inst *arg_sdi, gboolean arg_is_blocking);
+
+/* ****** UTIL: Struct handling ****** */
+SR_PRIV int appadmm_clear_context(struct appadmm_context *arg_devc);
+
+/* ****** UTIL: Model capability handling ****** */
+SR_PRIV int appadmm_cap_channel(const enum appadmm_model_id_e arg_model_id, const enum appadmm_channel_e arg_channel);
+
+/* ****** Resolvers / Tables ****** */
 SR_PRIV const char *appadmm_channel_name(const enum appadmm_channel_e arg_channel);
 SR_PRIV const char *appadmm_model_id_name(const enum appadmm_model_id_e arg_model_id);
-
-SR_PRIV int appadmm_send(const struct sr_dev_inst *sdi, const struct appadmm_frame_s *arg_frame);
-SR_PRIV int appadmm_receive_serial(int fd, int revents, void *cb_data);
-SR_PRIV int appadmm_receive(const struct sr_dev_inst *sdi, gboolean arg_is_blocking);
-
-SR_PRIV int appadmm_clear_context(struct appadmm_context *arg_devc);
 
 #endif
