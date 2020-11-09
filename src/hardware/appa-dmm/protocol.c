@@ -18,7 +18,7 @@
  */
 
 /**
- * @file appa_dmm.c
+ * @file
  * @version 1
  *
  * APPA B Interface

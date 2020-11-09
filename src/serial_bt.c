@@ -55,8 +55,8 @@ static const struct scan_supported_item {
 	/* Guess connection types from device names (useful for scans). */
 	{ "121GW", SER_BT_CONN_BLE122, },
 	{ "Adafruit Bluefruit LE 8134", SER_BT_CONN_NRF51, },
-	/* APPA-DMM based identifiers {{{ */
 	{ "HC-05", SER_BT_CONN_RFCOMM, },
+	/* appa-dmm based identifiers {{{ */
 	{ "APPA 155B", SER_BT_CONN_APPADMM, },
 	{ "APPA 156B", SER_BT_CONN_APPADMM, },
 	{ "APPA 157B", SER_BT_CONN_APPADMM, },
