@@ -42,23 +42,15 @@
 
 #define LOG_PREFIX "appa-dmm"
 
-#define APPADMM_PACKET_SIZE 17
- 
 #define APPADMM_HANDSHAKE_TIMEOUT 1000
 #define APPADMM_WRITE_BLOCKING_TIMEOUT 5
 #define APPADMM_READ_BLOCKING_TIMEOUT 64
-
-#define APPADMM_DISPLAY_COUNT 2
 
 #define APPADMM_CONF_SERIAL "9600/8n1"
 
 #define APPADMM_STRING_NA "N/A"
 
 #define APPADMM_READING_TEXT_OL "OL"
-
-#define APPADMM_CHANNEL_NAME_DISPLAY_MAIN "main"
-
-#define APPADMM_CHANNEL_NAME_DISPLAY_SUB "sub"
 
 #define APPADMM_FRAME_HEADER_SIZE 4
 #define APPADMM_FRAME_CHECKSUM_SIZE 1
@@ -332,6 +324,10 @@ enum appadmm_model_id_e {
 	 */
 };
 
+enum appadmm_protocol_id_e {
+	APPADMM_PROTOCOL_ID_INVALID = 0x00,
+	APPADMM_PROTOCOL_ID_APPA = 0x01,
+};
 
 /**
  * Manual / Auto range field values
@@ -641,6 +637,18 @@ struct appadmm_response_data_read_display_s {
 	struct appadmm_display_data_s sub_display_data; /**< Reading of sub (upper) display value */
 };
 
+struct appadmm_request_data_read_protocol_version_s {
+};
+
+/**
+ * Response Data for APPADMM_COMMAND_READ_DISPLAY
+ */
+struct appadmm_response_data_read_protocol_version_s {
+	enum appadmm_protocol_id_e protocol_id;
+	uint8_t major_protocol_version;
+	uint8_t minor_protocol_version;
+};
+
 struct appadmm_frame_s {
 	
 	enum appadmm_command_e command;
@@ -653,6 +661,8 @@ struct appadmm_frame_s {
 			
 			struct appadmm_request_data_read_display_s read_display;
 			
+			struct appadmm_request_data_read_protocol_version_s read_protocol_version;
+			
 		} request;
 		
 		union {
@@ -661,15 +671,20 @@ struct appadmm_frame_s {
 			
 			struct appadmm_response_data_read_display_s read_display;
 			
+			struct appadmm_response_data_read_protocol_version_s read_protocol_version;
+			
 		} response;
 		
 	};
 	
 };
 
-struct dev_context {
+struct appadmm_context {
 	enum appadmm_connection_type_e connection_type;
 	enum appadmm_model_id_e model_id;
+	enum appadmm_protocol_id_e protocol_id;
+	uint8_t major_protocol_version;
+	uint8_t minor_protocol_version;
 	struct sr_sw_limits limits;
 	gboolean request_active;
 	uint8_t recv_buffer[APPADMM_FRAME_MAX_SIZE];
@@ -680,15 +695,13 @@ struct dev_context {
 /* ****** Functions ****** */
 /* *********************** */
 
-
-SR_PRIV int appadmm_receive_serial(int fd, int revents, void *cb_data);
-
-SR_PRIV int appadmm_receive(const struct sr_dev_inst *sdi, gboolean arg_is_blocking);
+SR_PRIV const char *appadmm_channel_name(const enum appadmm_channel_e arg_channel);
+SR_PRIV const char *appadmm_model_id_name(const enum appadmm_model_id_e arg_model_id);
 
 SR_PRIV int appadmm_send(const struct sr_dev_inst *sdi, const struct appadmm_frame_s *arg_frame);
+SR_PRIV int appadmm_receive_serial(int fd, int revents, void *cb_data);
+SR_PRIV int appadmm_receive(const struct sr_dev_inst *sdi, gboolean arg_is_blocking);
 
-SR_PRIV const char *appadmm_channel_name(const enum appadmm_channel_e arg_channel);
-
-SR_PRIV const char *appadmm_model_id_name(const enum appadmm_model_id_e arg_model_id);
+SR_PRIV int appadmm_clear_context(struct appadmm_context *arg_devc);
 
 #endif

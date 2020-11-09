@@ -42,35 +42,31 @@
 /* ******************************** */
 
 static gboolean appadmm_is_wordcode(const int arg_wordcode);
-
 static gboolean appadmm_is_wordcode_dash(const int arg_wordcode);
-
 static const char *appadmm_wordcode_name(const enum appadmm_wordcode_e arg_wordcode);
 
-static uint8_t appadmm_checksum(const uint8_t *arg_data, int arg_size);
-
 static int appadmm_frame_request_size(enum appadmm_command_e arg_command);
-
 static int appadmm_frame_response_size(enum appadmm_command_e arg_command);
-
 static int appadmm_is_response_frame_data_size_valid(enum appadmm_command_e arg_command, int arg_size);
-
 static int appadmm_is_request_frame_data_size_valid(enum appadmm_command_e arg_command, int arg_size);
 
-static int appadmm_buffer_reset(struct dev_context *devc);
+static int appadmm_buffer_reset(struct appadmm_context *devc);
 
 static int appadmm_process(const struct sr_dev_inst *sdi, const struct appadmm_frame_s *arg_frame);
+
+static uint8_t appadmm_checksum(const uint8_t *arg_data, int arg_size);
 
 static int appadmm_frame_encode(const struct appadmm_frame_s *arg_frame, uint8_t *arg_out_data, int arg_size, int *arg_out_size);
 
 static int appadmm_frame_decode_read_information(const uint8_t **rdptr, struct appadmm_response_data_read_information_s* arg_data);
 static int appadmm_frame_decode_read_display(const uint8_t **rdptr, struct appadmm_response_data_read_display_s* arg_data);
+static int appadmm_frame_decode_read_protocol_version(const uint8_t **rdptr, struct appadmm_response_data_read_protocol_version_s* arg_data);
 
 static int appadmm_frame_decode(const uint8_t *arg_data, int arg_size, struct appadmm_frame_s *arg_out_frame);
 
 static int appadmm_response_read_information(const struct sr_dev_inst *sdi, const struct appadmm_response_data_read_information_s *arg_data);
-
 static int appadmm_response_read_display(const struct sr_dev_inst *sdi, const struct appadmm_response_data_read_display_s *arg_data);
+static int appadmm_response_read_protocol_version(const struct sr_dev_inst *sdi, const struct appadmm_response_data_read_protocol_version_s *arg_data);
 
 /* *************************************** */
 /* ****** Internal Helper Functions ****** */
@@ -230,7 +226,7 @@ static int appadmm_is_response_frame_data_size_valid(enum appadmm_command_e arg_
 	return SR_OK;
 }
 
-static int appadmm_buffer_reset(struct dev_context *devc)
+static int appadmm_buffer_reset(struct appadmm_context *devc)
 {
 	devc->recv_buffer_len = 0;
 	devc->recv_buffer[0] = 0;
@@ -242,7 +238,7 @@ static int appadmm_buffer_reset(struct dev_context *devc)
 
 SR_PRIV int appadmm_send(const struct sr_dev_inst *sdi, const struct appadmm_frame_s *arg_frame)
 {
-	struct dev_context *devc;
+	struct appadmm_context *devc;
 	struct sr_serial_dev_inst *serial;
 	int retr;
 	
@@ -268,7 +264,7 @@ SR_PRIV int appadmm_send(const struct sr_dev_inst *sdi, const struct appadmm_fra
 
 static int appadmm_process(const struct sr_dev_inst *sdi, const struct appadmm_frame_s *arg_frame)
 {
-	struct dev_context *devc;
+	struct appadmm_context *devc;
 	
 	if (!(devc = sdi->priv))
 		return SR_ERR_ARG;
@@ -284,6 +280,8 @@ static int appadmm_process(const struct sr_dev_inst *sdi, const struct appadmm_f
 		return appadmm_response_read_display(sdi, &arg_frame->response.read_display);
 		
 	case APPADMM_COMMAND_READ_PROTOCOL_VERSION:
+		return appadmm_response_read_protocol_version(sdi, &arg_frame->response.read_protocol_version);
+		
 	case APPADMM_COMMAND_READ_BATTERY_LIFE:
 	case APPADMM_COMMAND_CAL_READING:
 	case APPADMM_COMMAND_READ_MEMORY:
@@ -310,7 +308,7 @@ static int appadmm_process(const struct sr_dev_inst *sdi, const struct appadmm_f
 
 SR_PRIV int appadmm_receive_serial(int fd, int revents, void *cb_data)
 {
-	struct dev_context *devc;
+	struct appadmm_context *devc;
 	struct sr_dev_inst *sdi;
 	struct appadmm_frame_s frame;
 	
@@ -340,7 +338,7 @@ SR_PRIV int appadmm_receive_serial(int fd, int revents, void *cb_data)
 
 SR_PRIV int appadmm_receive(const struct sr_dev_inst *sdi, gboolean arg_is_blocking)
 {
-	struct dev_context *devc;
+	struct appadmm_context *devc;
 	struct sr_serial_dev_inst *serial;
 	
 	uint8_t buf[APPADMM_FRAME_MAX_SIZE * 5];
@@ -463,7 +461,6 @@ static int appadmm_frame_encode(const struct appadmm_frame_s *arg_frame, uint8_t
 
 static int appadmm_frame_decode_read_information(const uint8_t **rdptr, struct appadmm_response_data_read_information_s* arg_data)
 {
-	uint8_t u8;
 	int xloop;
 	char* ltr;
 	
@@ -529,6 +526,15 @@ static int appadmm_frame_decode_read_display(const uint8_t **rdptr, struct appad
 	return SR_OK;
 }
 
+static int appadmm_frame_decode_read_protocol_version(const uint8_t **rdptr, struct appadmm_response_data_read_protocol_version_s* arg_data)
+{
+	arg_data->protocol_id = read_u16le_inc(&*rdptr);
+	arg_data->major_protocol_version = read_u8_inc(&*rdptr);
+	arg_data->minor_protocol_version = read_u8_inc(&*rdptr);
+
+	return SR_OK;
+}
+
 static int appadmm_frame_decode(const uint8_t *arg_data, int arg_size, struct appadmm_frame_s *arg_out_frame)
 {
 	const uint8_t *rdptr;
@@ -579,6 +585,15 @@ static int appadmm_frame_decode(const uint8_t *arg_data, int arg_size, struct ap
 		
 		break;
 		
+	case APPADMM_COMMAND_READ_PROTOCOL_VERSION:
+		if (size != APPADMM_FRAME_DATA_SIZE_RESPONSE_READ_PROTOCOL_VERSION)
+			return SR_ERR_DATA;
+		retr = appadmm_frame_decode_read_protocol_version(&rdptr, &arg_out_frame->response.read_protocol_version);
+		if (retr != SR_OK)
+			return retr;
+		
+		break;
+		
 	default:
 		return SR_ERR_DATA;
 		
@@ -591,6 +606,25 @@ static int appadmm_frame_decode(const uint8_t *arg_data, int arg_size, struct ap
 	return SR_OK;
 }
 
+SR_PRIV int appadmm_clear_context(struct appadmm_context *arg_devc)
+{
+	if (arg_devc == NULL)
+		return SR_ERR_BUG;
+	arg_devc->connection_type = APPADMM_CONNECTION_TYPE_INVALID;
+	arg_devc->model_id = APPADMM_MODEL_ID_INVALID;
+	arg_devc->protocol_id = APPADMM_PROTOCOL_ID_INVALID;
+	arg_devc->major_protocol_version = 0;
+	arg_devc->minor_protocol_version = 0;
+	sr_sw_limits_init(&arg_devc->limits);
+	arg_devc->request_active = FALSE;
+	arg_devc->recv_buffer[0] = 0;
+	arg_devc->recv_buffer[1] = 0;
+	arg_devc->recv_buffer[2] = 0;
+	arg_devc->recv_buffer[3] = 0;
+	arg_devc->recv_buffer_len = 0;
+	return
+		SR_OK;
+};
 
 /* *************************************** */
 /* ****** Internal Resolving tables ****** */
@@ -788,10 +822,9 @@ SR_PRIV const char *appadmm_channel_name(const enum appadmm_channel_e arg_channe
 	return APPADMM_STRING_NA;
 }
 
-
 static int appadmm_response_read_information(const struct sr_dev_inst *sdi, const struct appadmm_response_data_read_information_s *arg_data)
 {
-	struct dev_context *devc;
+	struct appadmm_context *devc;
 	struct sr_dev_inst *sdi_w;
 	
 	int retr;
@@ -1369,6 +1402,23 @@ static int appadmm_response_read_display(const struct sr_dev_inst *sdi, const st
 	retr = appadmm_transform_display_data(sdi, APPADMM_CHANNEL_SUB, arg_data);
 	if(retr != SR_OK)
 		return retr;
+	
+	return retr;
+}
+
+static int appadmm_response_read_protocol_version(const struct sr_dev_inst *sdi, const struct appadmm_response_data_read_protocol_version_s *arg_data)
+{
+	struct appadmm_context *devc;
+	
+	int retr;
+	
+	devc = sdi->priv;
+
+	devc->protocol_id = arg_data->protocol_id;
+	devc->major_protocol_version = arg_data->major_protocol_version;
+	devc->minor_protocol_version = arg_data->minor_protocol_version;
+	
+	retr = SR_OK;
 	
 	return retr;
 }

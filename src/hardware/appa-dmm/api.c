@@ -36,12 +36,10 @@ static const uint32_t devopts[] = {
 	SR_CONF_LIMIT_MSEC | SR_CONF_GET | SR_CONF_SET,
 };
 
-static struct sr_dev_driver appa_dmm_driver_info;
-
 static GSList *scan(struct sr_dev_driver *di, GSList *options)
 {
 	struct drv_context *drvc;
-	struct dev_context *devc;
+	struct appadmm_context *devc;
 	GSList *devices;
 	const char *conn;
 	const char *serialcomm;
@@ -57,9 +55,10 @@ static GSList *scan(struct sr_dev_driver *di, GSList *options)
 	drvc = di->context;
 	drvc->instances = NULL;
 
-	devc = g_malloc0(sizeof(struct dev_context));
-	devc->model_id = APPADMM_MODEL_ID_INVALID;
-
+	devc = g_malloc0(sizeof(struct appadmm_context));
+	/// @TODO why does it segf?
+	//appadmm_clear_context(&devc);
+	
 	serialcomm = APPADMM_CONF_SERIAL;
 	conn = NULL;
 	for (it = options; it; it = it->next) {
@@ -98,8 +97,6 @@ static GSList *scan(struct sr_dev_driver *di, GSList *options)
 	sdi->driver = di;
 	sdi->priv = devc;
 	
-	sr_sw_limits_init(&devc->limits);
-
 	frame.command = APPADMM_COMMAND_READ_INFORMATION;
 	appadmm_send(sdi, &frame);
 	
@@ -162,7 +159,7 @@ static int dev_close(struct sr_dev_inst *sdi)
 static int config_get(uint32_t key, GVariant **data,
 	const struct sr_dev_inst *sdi, const struct sr_channel_group *cg)
 {
-	struct dev_context *devc;
+	struct appadmm_context *devc;
 	
 	int ret;
 
@@ -190,7 +187,7 @@ static int config_get(uint32_t key, GVariant **data,
 static int config_set(uint32_t key, GVariant *data,
 	const struct sr_dev_inst *sdi, const struct sr_channel_group *cg)
 {
-	struct dev_context *devc;
+	struct appadmm_context *devc;
 	
 	int ret;
 
@@ -241,7 +238,7 @@ static int config_list(uint32_t key, GVariant **data,
 
 static int dev_acquisition_start(const struct sr_dev_inst *sdi)
 {
-	struct dev_context *devc;
+	struct appadmm_context *devc;
 	struct sr_serial_dev_inst *serial;
 	
 	int retr;
@@ -271,22 +268,34 @@ static int dev_acquisition_stop(struct sr_dev_inst *sdi)
 
 #endif//1|0
 
-static struct sr_dev_driver appa_dmm_driver_info = {
-	.name = "appa-dmm",
-	.longname = "APPA DMM",
-	.api_version = 1,
-	.init = std_init,
-	.cleanup = std_cleanup,
-	.scan = scan,
-	.dev_list = std_dev_list,
-	.dev_clear = std_dev_clear,
-	.config_get = config_get,
-	.config_set = config_set,
-	.config_list = config_list,
-	.dev_open = std_serial_dev_open,
-	.dev_close = std_serial_dev_close,
-	.dev_acquisition_start = dev_acquisition_start,
-	.dev_acquisition_stop = std_serial_dev_acquisition_stop,
-	.context = NULL,
-};
-SR_REGISTER_DEV_DRIVER(appa_dmm_driver_info);
+#define APPADMM_DRIVER_ENTRY(ARG_NAME, ARG_LONGNAME) \
+&((struct sr_dev_driver){ \
+	.name = ARG_NAME, \
+	.longname = ARG_LONGNAME, \
+	.api_version = 1, \
+	.init = std_init, \
+	.cleanup = std_cleanup, \
+	.scan = scan, \
+	.dev_list = std_dev_list, \
+	.dev_clear = std_dev_clear, \
+	.config_get = config_get, \
+	.config_set = config_set, \
+	.config_list = config_list, \
+	.dev_open = std_serial_dev_open, \
+	.dev_close = std_serial_dev_close, \
+	.dev_acquisition_start = dev_acquisition_start, \
+	.dev_acquisition_stop = std_serial_dev_acquisition_stop, \
+	.context = NULL, \
+})
+
+SR_REGISTER_DEV_DRIVER_LIST(appadmm_drivers,
+	APPADMM_DRIVER_ENTRY("appa-dmm", "APPA 150, 170, 200, 500, A, S and sFlex-Series"),
+	APPADMM_DRIVER_ENTRY("benning-dmm", "BENNING MM 10-1, MM 12, CM 9-2, CM 10-1, CM 12, -PV"),
+	APPADMM_DRIVER_ENTRY("cmt-35xx", "CMT 35xx Series"),
+	APPADMM_DRIVER_ENTRY("ht-8100", "HT Instruments HT8100"),
+	APPADMM_DRIVER_ENTRY("iso-tech-idm50x", "ISO-TECH IDM50x Series"),
+	APPADMM_DRIVER_ENTRY("rspro-dmm", "RS PRO IDM50x and S Series"),
+	APPADMM_DRIVER_ENTRY("sefram-7xxx", "Sefram 7xxx Series"),
+	APPADMM_DRIVER_ENTRY("voltcraft-vc930", "Voltcraft VC-930"),
+	APPADMM_DRIVER_ENTRY("voltcraft-vc950", "Voltcraft VC-950"),
+);
