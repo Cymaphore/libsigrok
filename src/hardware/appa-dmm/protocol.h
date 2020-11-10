@@ -780,15 +780,19 @@ struct appadmm_context {
 /* ***************************************** */
 
 /* ****** Transmission / reception ****** */
-SR_PRIV int appadmm_send(const struct sr_dev_inst *arg_sdi, const struct appadmm_frame_s *arg_frame);
-SR_PRIV int appadmm_serial_receive(int arg_fd, int arg_revents, void *arg_cb_data);
-SR_PRIV int appadmm_receive(const struct sr_dev_inst *arg_sdi, gboolean arg_is_blocking);
+SR_PRIV int appadmm_send(const struct sr_dev_inst *arg_sdi,
+	const struct appadmm_frame_s *arg_frame);
+SR_PRIV int appadmm_serial_receive(int arg_fd, int arg_revents,
+	void *arg_cb_data);
+SR_PRIV int appadmm_receive(const struct sr_dev_inst *arg_sdi,
+	gboolean arg_is_blocking);
 
 /* ****** UTIL: Struct handling ****** */
 SR_PRIV int appadmm_clear_context(struct appadmm_context *arg_devc);
 
 /* ****** UTIL: Model capability handling ****** */
-SR_PRIV int appadmm_cap_channel(const enum appadmm_model_id_e arg_model_id, const enum appadmm_channel_e arg_channel);
+SR_PRIV int appadmm_cap_channel(const enum appadmm_model_id_e arg_model_id,
+	const enum appadmm_channel_e arg_channel);
 
 /* ****** Resolvers / Tables ****** */
 SR_PRIV const char *appadmm_channel_name(const enum appadmm_channel_e arg_channel);

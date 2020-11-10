@@ -150,7 +150,7 @@ static GSList *appadmm_scan(struct sr_dev_driver *di, GSList *options)
 	devices = g_slist_append(devices, sdi);
 
 	retr = serial_close(serial);
-	if (retr != SR_OK) {
+	if (retr < SR_OK) {
 		sr_err("Unable to close device after scan");
 		return NULL;
 	}
@@ -245,7 +245,7 @@ static int appadmm_acquisition_start(const struct sr_dev_inst *sdi)
 
 	sr_sw_limits_acquisition_start(&devc->limits);
 	retr = std_session_send_df_header(sdi);
-	if (retr != SR_OK)
+	if (retr < SR_OK)
 		return retr;
 
 	retr = serial_source_add(sdi->session, serial, G_IO_IN, 10,
