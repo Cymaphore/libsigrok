@@ -36,19 +36,26 @@
 #include "protocol.h"
 #include "scpi/vxi.h"
 
-static const uint32_t scanopts[] = {
+static const uint32_t appadmm_scanopts[] = {
 	SR_CONF_CONN,
 	SR_CONF_SERIALCOMM,
 };
 
-static const uint32_t drvopts[] = {
+static const uint32_t appadmm_drvopts[] = {
 	SR_CONF_MULTIMETER,
 };
 
-static const uint32_t devopts[] = {
+static const uint32_t appadmm_devopts[] = {
 	SR_CONF_CONTINUOUS,
 	SR_CONF_LIMIT_SAMPLES | SR_CONF_GET | SR_CONF_SET,
 	SR_CONF_LIMIT_MSEC | SR_CONF_GET | SR_CONF_SET,
+	SR_CONF_DATA_SOURCE | SR_CONF_GET | SR_CONF_SET | SR_CONF_LIST,
+};
+
+static const char *appadmm_data_sources[] = {
+	"Live", /**< APPADMM_DATA_SOURCE_LIVE */
+	"Mem", /**< APPADMM_DATA_SOURCE_MEM */
+	"Log", /**< APPADMM_DATA_SOURCE_LOG */
 };
 
 static GSList *appadmm_scan(struct sr_dev_driver *di, GSList *options)
@@ -66,7 +73,6 @@ static GSList *appadmm_scan(struct sr_dev_driver *di, GSList *options)
 	GSList *it;
 	struct sr_config *src;
 	struct appadmm_frame_s frame;
-	int handshake_cycles;
 
 	devices = NULL;
 	drvc = di->context;
@@ -117,16 +123,7 @@ static GSList *appadmm_scan(struct sr_dev_driver *di, GSList *options)
 
 	/* Scan for devices by sendind READ_INFORMATION */
 	frame.command = APPADMM_COMMAND_READ_INFORMATION;
-	appadmm_send(sdi, &frame);
-
-	/* Wait for READ_INFORMATION */
-	handshake_cycles = APPADMM_HANDSHAKE_TIMEOUT / APPADMM_READ_BLOCKING_TIMEOUT;
-	while (handshake_cycles-- > 0) {
-		appadmm_receive(sdi, TRUE);
-		if (devc->model_id != APPADMM_MODEL_ID_INVALID) {
-			break;
-		}
-	};
+	appadmm_send_receive(sdi, &frame);
 
 	/* If received model is invalid or nothing received, abort */
 	if (devc->model_id == APPADMM_MODEL_ID_INVALID) {
@@ -136,7 +133,7 @@ static GSList *appadmm_scan(struct sr_dev_driver *di, GSList *options)
 		return NULL;
 	}
 
-	sr_warn("APPA-Device DETECTED; Vendor: %s, Model: %s, APPA-Model: %s, Version: %s, Serial number: %s, Model ID: %i",
+	sr_warn("APPA-Device DETECTED; Vendor: %s, Model: %s, OEM-Model: %s, Version: %s, Serial number: %s, Model ID: %i",
 		sdi->vendor,
 		sdi->model,
 		appadmm_model_id_name(devc->model_id),
@@ -144,6 +141,7 @@ static GSList *appadmm_scan(struct sr_dev_driver *di, GSList *options)
 		sdi->serial_num,
 		devc->model_id);
 
+	sr_channel_new(sdi, APPADMM_CHANNEL_SAMPLE_ID, SR_CHANNEL_ANALOG, appadmm_cap_channel(devc->model_id, APPADMM_CHANNEL_SAMPLE_ID), appadmm_channel_name(APPADMM_CHANNEL_SAMPLE_ID));
 	sr_channel_new(sdi, APPADMM_CHANNEL_MAIN, SR_CHANNEL_ANALOG, appadmm_cap_channel(devc->model_id, APPADMM_CHANNEL_MAIN), appadmm_channel_name(APPADMM_CHANNEL_MAIN));
 	sr_channel_new(sdi, APPADMM_CHANNEL_SUB, SR_CHANNEL_ANALOG, appadmm_cap_channel(devc->model_id, APPADMM_CHANNEL_SUB), appadmm_channel_name(APPADMM_CHANNEL_SUB));
 
@@ -178,6 +176,9 @@ static int appadmm_config_get(uint32_t key, GVariant **data,
 	case SR_CONF_LIMIT_FRAMES:
 	case SR_CONF_LIMIT_MSEC:
 		return sr_sw_limits_config_get(&devc->limits, key, data);
+	case SR_CONF_DATA_SOURCE:
+		*data = g_variant_new_string(appadmm_data_sources[devc->data_source]);
+		break;
 	default:
 		return SR_ERR_NA;
 	}
@@ -190,6 +191,7 @@ static int appadmm_config_set(uint32_t key, GVariant *data,
 {
 	struct appadmm_context *devc;
 
+	int idx;
 	int retr;
 
 	(void) cg;
@@ -205,6 +207,11 @@ static int appadmm_config_set(uint32_t key, GVariant *data,
 	case SR_CONF_LIMIT_FRAMES:
 	case SR_CONF_LIMIT_MSEC:
 		return sr_sw_limits_config_set(&devc->limits, key, data);
+	case SR_CONF_DATA_SOURCE:
+		if ((idx = std_str_idx(data, ARRAY_AND_SIZE(appadmm_data_sources))) < 0)
+			return SR_ERR_ARG;
+		devc->data_source = idx;
+		break;
 	default:
 		retr = SR_ERR_NA;
 	}
@@ -220,12 +227,15 @@ static int appadmm_config_list(uint32_t key, GVariant **data,
 	retr = SR_OK;
 
 	if (!sdi)
-		return STD_CONFIG_LIST(key, data, sdi, cg, scanopts, drvopts, devopts);
+		return STD_CONFIG_LIST(key, data, sdi, cg, appadmm_scanopts, appadmm_drvopts, appadmm_devopts);
 
 	switch (key) {
 	case SR_CONF_SCAN_OPTIONS:
 	case SR_CONF_DEVICE_OPTIONS:
-		return STD_CONFIG_LIST(key, data, sdi, cg, scanopts, drvopts, devopts);
+		return STD_CONFIG_LIST(key, data, sdi, cg, appadmm_scanopts, appadmm_drvopts, appadmm_devopts);
+	case SR_CONF_DATA_SOURCE:
+		*data = g_variant_new_strv(ARRAY_AND_SIZE(appadmm_data_sources));
+		break;
 	default:
 		return SR_ERR_NA;
 	}
@@ -237,12 +247,40 @@ static int appadmm_acquisition_start(const struct sr_dev_inst *sdi)
 {
 	struct appadmm_context *devc;
 	struct sr_serial_dev_inst *serial;
+	struct sr_channel *channel;
+	struct appadmm_frame_s frame;
 
 	int retr;
 
 	devc = sdi->priv;
 	serial = sdi->conn;
 
+	devc->sample_id = 0;
+	channel = g_slist_nth_data(sdi->channels, APPADMM_CHANNEL_SAMPLE_ID);
+	
+	if(channel == NULL)
+		return SR_ERR_BUG;
+	
+	switch (devc->data_source) {
+	default:
+	case APPADMM_DATA_SOURCE_LIVE:
+		channel->enabled = FALSE;
+		break;
+		
+	case APPADMM_DATA_SOURCE_MEM:
+		channel->enabled = TRUE;
+		break;
+		
+	case APPADMM_DATA_SOURCE_LOG:
+		channel->enabled = TRUE;
+		frame.command = APPADMM_COMMAND_READ_MEMORY;
+		frame.request.read_memory.device_number = 0;
+		frame.request.read_memory.memory_address = 0xa;
+		frame.request.read_memory.data_length = 4;
+		appadmm_send_receive(sdi, &frame);
+		break;
+	}
+	
 	sr_sw_limits_acquisition_start(&devc->limits);
 	retr = std_session_send_df_header(sdi);
 	if (retr < SR_OK)

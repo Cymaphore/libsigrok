@@ -53,6 +53,12 @@
 #define APPADMM_HANDSHAKE_TIMEOUT 1000
 
 /**
+ * Timeout of general send/receive (read information)
+ * when scanning (ms)
+ */
+#define APPADMM_SR_TIMEOUT 1000
+
+/**
  * Timeout when writing blocking (ms)
  */
 #define APPADMM_WRITE_BLOCKING_TIMEOUT 5
@@ -176,12 +182,22 @@ enum appadmm_frame_type_e {
 };
 
 /**
+ * Data sources
+ */
+enum appadmm_data_source_e {
+	APPADMM_DATA_SOURCE_LIVE = 0x00,
+	APPADMM_DATA_SOURCE_MEM = 0x01,
+	APPADMM_DATA_SOURCE_LOG = 0x02,
+};
+
+/**
  * Channel definition
  */
 enum appadmm_channel_e {
 	APPADMM_CHANNEL_INVALID = -1,
-	APPADMM_CHANNEL_MAIN = 0x00,
-	APPADMM_CHANNEL_SUB = 0x01,
+	APPADMM_CHANNEL_SAMPLE_ID = 0x00,
+	APPADMM_CHANNEL_MAIN = 0x01,
+	APPADMM_CHANNEL_SUB = 0x02,
 };
 
 /* **************************************** */
@@ -212,6 +228,8 @@ enum appadmm_command_e {
 	APPADMM_COMMAND_OTA_SEND_INFORMATION = 0xa1, /**< Send OTA information */
 	APPADMM_COMMAND_OTA_SEND_FIRMWARE_PACKAGE = 0xa2, /**< Send OTA Firmware package */
 	APPADMM_COMMAND_OTA_START_UPGRADE_PROCEDURE = 0xa3, /**< Start Upgrade-Procedure */
+
+	APPADMM_COMMAND_INVALID = -1, /**< Invalid command, internal */
 };
 
 /**
@@ -680,6 +698,7 @@ struct appadmm_display_data_s {
  * Request Data for APPADMM_COMMAND_READ_INFORMATION
  */
 struct appadmm_request_data_read_information_s {
+	/* No rquest data for this command */
 };
 
 /**
@@ -696,6 +715,7 @@ struct appadmm_response_data_read_information_s {
  * Request Data for APPADMM_COMMAND_READ_DISPLAY
  */
 struct appadmm_request_data_read_display_s {
+	/* No rquest data for this command */
 };
 
 /**
@@ -716,6 +736,7 @@ struct appadmm_response_data_read_display_s {
  * Request Data for APPADMM_COMMAND_READ_PROTOCOL_VERSION
  */
 struct appadmm_request_data_read_protocol_version_s {
+	/* No rquest data for this command */
 };
 
 /**
@@ -725,6 +746,23 @@ struct appadmm_response_data_read_protocol_version_s {
 	enum appadmm_protocol_id_e protocol_id; /**< Protocol type ID */
 	uint8_t major_protocol_version; /**< Protocol major version */
 	uint8_t minor_protocol_version; /**< Protocol minor version */
+};
+
+/**
+ * Request Data for APPADMM_COMMAND_READ_MEMORY
+ */
+struct appadmm_request_data_read_memory_s {
+	uint8_t device_number; /**< Selection of memory */
+	uint16_t memory_address; /**< Address in memory */
+	uint8_t data_length; /**< Number of bytes to read, max 64 */
+};
+
+/**
+ * Response Data for APPADMM_COMMAND_READ_MEMORY
+ */
+struct appadmm_response_data_read_memory_s {
+	uint8_t data[APPADMM_FRAME_MAX_DATA_SIZE]; /**< Requested data */
+	uint8_t data_length; /**< Length of requested data */
 };
 
 /**
@@ -740,12 +778,14 @@ struct appadmm_frame_s {
 			struct appadmm_request_data_read_information_s read_information;
 			struct appadmm_request_data_read_display_s read_display;
 			struct appadmm_request_data_read_protocol_version_s read_protocol_version;
+			struct appadmm_request_data_read_memory_s read_memory;
 		} request;
 
 		union {
 			struct appadmm_response_data_read_information_s read_information;
 			struct appadmm_response_data_read_display_s read_display;
 			struct appadmm_response_data_read_protocol_version_s read_protocol_version;
+			struct appadmm_response_data_read_memory_s read_memory;
 		} response;
 	};
 };
@@ -763,6 +803,8 @@ struct appadmm_context {
 	enum appadmm_model_id_e model_id; /**< Model identifier */
 
 	enum appadmm_connection_type_e connection_type; /**< Connection type */
+	enum appadmm_data_source_e data_source; /**< Data source */
+	enum appadmm_command_e command_received; /**< Used for appadmm_send_receive() */
 
 	enum appadmm_protocol_id_e protocol_id; /**< APPA Protocol Identifier */
 	uint8_t major_protocol_version; /**< APPA Protocol major version */
@@ -773,6 +815,8 @@ struct appadmm_context {
 	gboolean request_pending; /**< Active request blocker */
 	uint8_t recv_buffer[APPADMM_FRAME_MAX_SIZE]; /**< Reception buffer */
 	uint8_t recv_buffer_len; /**< Current number of valid frame bytes in buffer */
+	
+	uint64_t sample_id; /**< Sample ID counter */
 };
 
 /* ***************************************** */
@@ -781,6 +825,8 @@ struct appadmm_context {
 
 /* ****** Transmission / reception ****** */
 SR_PRIV int appadmm_send(const struct sr_dev_inst *arg_sdi,
+	const struct appadmm_frame_s *arg_frame);
+SR_PRIV int appadmm_send_receive(const struct sr_dev_inst *arg_sdi,
 	const struct appadmm_frame_s *arg_frame);
 SR_PRIV int appadmm_serial_receive(int arg_fd, int arg_revents,
 	void *arg_cb_data);

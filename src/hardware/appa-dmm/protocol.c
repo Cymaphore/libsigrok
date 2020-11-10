@@ -51,6 +51,8 @@ static int appadmm_response_read_display(const struct sr_dev_inst *arg_sdi,
 	const struct appadmm_response_data_read_display_s *arg_data);
 static int appadmm_response_read_protocol_version(const struct sr_dev_inst *arg_sdi,
 	const struct appadmm_response_data_read_protocol_version_s *arg_data);
+static int appadmm_response_read_memory(const struct sr_dev_inst *arg_sdi,
+	const struct appadmm_response_data_read_memory_s *arg_data);
 static int appadmm_process(const struct sr_dev_inst *arg_sdi,
 	const struct appadmm_frame_s *arg_frame);
 
@@ -61,18 +63,20 @@ static int appadmm_frame_decode_read_display(const uint8_t **arg_rdptr,
 	struct appadmm_response_data_read_display_s *arg_data);
 static int appadmm_frame_decode_read_protocol_version(const uint8_t **arg_rdptr,
 	struct appadmm_response_data_read_protocol_version_s *arg_data);
+static int appadmm_frame_encode_read_memory(uint8_t **arg_wrptr,
+	const struct appadmm_request_data_read_memory_s *arg_data);
+static int appadmm_frame_decode_read_memory(const uint8_t **arg_rdptr,
+	struct appadmm_response_data_read_memory_s *arg_data,
+	uint8_t arg_data_length);
 static int appadmm_frame_encode(const struct appadmm_frame_s *arg_frame,
 	uint8_t *arg_out_data, int arg_size, int *arg_out_size);
 static int appadmm_frame_decode(const uint8_t *arg_data, int arg_size,
 	struct appadmm_frame_s *arg_out_frame);
 
 /* ****** Transmission / reception ****** */
-/*SR_PRIV int appadmm_send(const struct sr_dev_inst *arg_sdi,
- * const struct appadmm_frame_s *arg_frame);*/
-/*SR_PRIV int appadmm_serial_receive(int arg_fd, int arg_revents,
- * void *arg_cb_data);*/
-/*SR_PRIV int appadmm_receive(const struct sr_dev_inst *arg_sdi,
- * gboolean arg_is_blocking);*/
+/* appadmm_send() */
+/* appadmm_serial_receive() */
+/* appadmm_receive() */
 
 /* ****** UTIL: Transmission/Reception, Encoding/Decoding ****** */
 static int appadmm_receive_buffer_reset(struct appadmm_context *arg_devc);
@@ -83,17 +87,16 @@ static int appadmm_is_response_frame_data_size_valid(enum appadmm_command_e arg_
 	int arg_size);
 
 /* ****** UTIL: Struct handling ****** */
-/*SR_PRIV int appadmm_clear_context(struct appadmm_context *arg_devc);*/
+/* appadmm_clear_context() */
 
 /* ****** UTIL: Model capability handling ****** */
-/*SR_PRIV int appadmm_cap_channel(const enum appadmm_model_id_e arg_model_id,
- * const enum appadmm_channel_e arg_channel);*/
+/* appadmm_cap_channel() */
 
 /* ****** Resolvers / Tables ****** */
 static int appadmm_is_wordcode(const int arg_wordcode);
 static int appadmm_is_wordcode_dash(const int arg_wordcode);
-/*SR_PRIV const char *appadmm_channel_name(const enum appadmm_channel_e arg_channel);*/
-/*SR_PRIV const char *appadmm_model_id_name(const enum appadmm_model_id_e arg_model_id);*/
+/* appadmm_channel_name() */
+/* appadmm_model_id_name() */
 static const char *appadmm_wordcode_name(const enum appadmm_wordcode_e arg_wordcode);
 
 /* ******************************** */
@@ -175,6 +178,7 @@ static int appadmm_transform_display_data(const struct sr_dev_inst *arg_sdi,
 	enum appadmm_channel_e arg_channel,
 	const struct appadmm_response_data_read_display_s *arg_data)
 {
+	struct appadmm_context *devc;
 	struct sr_datafeed_packet packet;
 
 	struct sr_datafeed_analog analog;
@@ -196,6 +200,7 @@ static int appadmm_transform_display_data(const struct sr_dev_inst *arg_sdi,
 		|| arg_data == NULL)
 		return SR_ERR_ARG;
 
+	devc = arg_sdi->priv;
 	retr = sr_analog_init(&analog, &encoding, &meaning, &spec, 0);
 	val = 0;
 
@@ -207,6 +212,13 @@ static int appadmm_transform_display_data(const struct sr_dev_inst *arg_sdi,
 	case APPADMM_CHANNEL_INVALID:
 		sr_err("Invalid channel selected when transforming readings");
 		return SR_ERR_BUG;
+		
+	case APPADMM_CHANNEL_SAMPLE_ID:
+		val = (float) devc->sample_id;
+		analog.encoding->digits = 0;
+		analog.meaning->mq = SR_MQ_COUNT;
+		analog.meaning->unit = SR_UNIT_UNITLESS;
+		break;
 
 	case APPADMM_CHANNEL_MAIN:
 	case APPADMM_CHANNEL_SUB:
@@ -321,15 +333,14 @@ static int appadmm_transform_display_data(const struct sr_dev_inst *arg_sdi,
 			case APPADMM_DATA_CONTENT_CURRENT_OUTPUT:
 			case APPADMM_DATA_CONTENT_CUR_OUT_0_20MA_PERCENT:
 			case APPADMM_DATA_CONTENT_CUR_OUT_4_20MA_PERCENT:
+				/* Currently unused,
+				 * unit data provides enough information */
 				break;
 
 			}
 
-			if (arg_data->auto_range == APPADMM_AUTO_RANGE) {
-
+			if (arg_data->auto_range == APPADMM_AUTO_RANGE)
 				analog.meaning->mqflags |= SR_MQFLAG_AUTORANGE;
-
-			}
 
 			switch (display_data->unit) {
 
@@ -585,7 +596,6 @@ static int appadmm_transform_display_data(const struct sr_dev_inst *arg_sdi,
 				}
 				break;
 
-				/* Currently unused (usually implicitly handled with the unit */
 			default:
 			case APPADMM_FUNCTIONCODE_NONE:
 			case APPADMM_FUNCTIONCODE_OHM:
@@ -608,6 +618,8 @@ static int appadmm_transform_display_data(const struct sr_dev_inst *arg_sdi,
 			case APPADMM_FUNCTIONCODE_PEAK_HOLD_A:
 			case APPADMM_FUNCTIONCODE_PEAK_HOLD_MA:
 			case APPADMM_FUNCTIONCODE_LOZ_PEAK_HOLD_V:
+				/* Currently unused,
+				 * unit data provides enough information */
 				break;
 			}
 
@@ -656,7 +668,7 @@ static int appadmm_transform_display_data(const struct sr_dev_inst *arg_sdi,
 				break;
 
 			case APPADMM_WORDCODE_DEF:
-				/* Not beautiful but functional */
+				/* Not beautiful, but functional */
 				if (display_data->unit == APPADMM_UNIT_DEGC)
 					sr_warn("MESSAGE [%s]: %s °C",
 					appadmm_channel_name(arg_channel),
@@ -710,6 +722,7 @@ static int appadmm_response_read_display(const struct sr_dev_inst *arg_sdi,
 	const struct appadmm_response_data_read_display_s *arg_data)
 {
 	struct appadmm_context *devc;
+	struct sr_channel *channel;
 
 	int retr;
 
@@ -720,19 +733,38 @@ static int appadmm_response_read_display(const struct sr_dev_inst *arg_sdi,
 	devc = arg_sdi->priv;
 	retr = SR_OK;
 
+	/* Sample ID */
+	channel = g_slist_nth_data(arg_sdi->channels, APPADMM_CHANNEL_SAMPLE_ID);
+	if (channel != NULL
+		&& channel->enabled) {
+		if (appadmm_cap_channel(devc->model_id, APPADMM_CHANNEL_SAMPLE_ID))
+			retr = appadmm_transform_display_data(arg_sdi,
+			APPADMM_CHANNEL_SAMPLE_ID, arg_data);
+		if (retr < SR_OK)
+			return retr;
+	}
+
 	/* Main reading */
-	if (appadmm_cap_channel(devc->model_id, APPADMM_CHANNEL_MAIN))
-		retr = appadmm_transform_display_data(arg_sdi,
-		APPADMM_CHANNEL_MAIN, arg_data);
-	if (retr < SR_OK)
-		return retr;
+	channel = g_slist_nth_data(arg_sdi->channels, APPADMM_CHANNEL_MAIN);
+	if (channel != NULL 
+		&& channel->enabled) {
+		if (appadmm_cap_channel(devc->model_id, APPADMM_CHANNEL_MAIN))
+			retr = appadmm_transform_display_data(arg_sdi,
+			APPADMM_CHANNEL_MAIN, arg_data);
+		if (retr < SR_OK)
+			return retr;
+	}
 
 	/* Sub reading */
-	if (appadmm_cap_channel(devc->model_id, APPADMM_CHANNEL_SUB))
-		retr = appadmm_transform_display_data(arg_sdi,
-		APPADMM_CHANNEL_SUB, arg_data);
-	if (retr < SR_OK)
-		return retr;
+	channel = g_slist_nth_data(arg_sdi->channels, APPADMM_CHANNEL_SUB);
+	if (channel != NULL
+		&& channel->enabled) {
+		if (appadmm_cap_channel(devc->model_id, APPADMM_CHANNEL_SUB))
+			retr = appadmm_transform_display_data(arg_sdi,
+			APPADMM_CHANNEL_SUB, arg_data);
+		if (retr < SR_OK)
+			return retr;
+	}
 
 	return retr;
 }
@@ -762,6 +794,42 @@ static int appadmm_response_read_protocol_version(const struct sr_dev_inst *arg_
 	devc->protocol_id = arg_data->protocol_id;
 	devc->major_protocol_version = arg_data->major_protocol_version;
 	devc->minor_protocol_version = arg_data->minor_protocol_version;
+
+	retr = SR_OK;
+
+	return retr;
+}
+
+/**
+ * Process response to COMMAND_READ_MEMORY
+ * Used to read from EEPROM memory of the device
+ *
+ * @param arg_sdi Device Instance
+ * @param arg_data Data received with frame
+ * @return SR_OK if successfull, otherwise SR_ERR_...
+ */
+static int appadmm_response_read_memory(const struct sr_dev_inst *arg_sdi,
+	const struct appadmm_response_data_read_memory_s *arg_data)
+{
+	struct appadmm_context *devc;
+
+	int retr;
+
+	if (arg_sdi == NULL
+		|| arg_data == NULL)
+		return SR_ERR_ARG;
+
+	devc = arg_sdi->priv;
+
+	(void) arg_data->data;
+	(void) arg_data->data_length;
+	(void) devc;
+	
+	sr_err("%d %d %d %d",
+		arg_data->data[0],
+		arg_data->data[1],
+		arg_data->data[2],
+		arg_data->data[3]);
 
 	retr = SR_OK;
 
@@ -802,9 +870,12 @@ static int appadmm_process(const struct sr_dev_inst *arg_sdi,
 		return appadmm_response_read_protocol_version(arg_sdi,
 			&arg_frame->response.read_protocol_version);
 
+	case APPADMM_COMMAND_READ_MEMORY:
+		return appadmm_response_read_memory(arg_sdi,
+			&arg_frame->response.read_memory);
+		
 	case APPADMM_COMMAND_READ_BATTERY_LIFE:
 	case APPADMM_COMMAND_CAL_READING:
-	case APPADMM_COMMAND_READ_MEMORY:
 	case APPADMM_COMMAND_READ_HARMONICS_DATA:
 	case APPADMM_COMMAND_FAILURE:
 	case APPADMM_COMMAND_SUCCESS:
@@ -952,6 +1023,56 @@ static int appadmm_frame_decode_read_protocol_version(const uint8_t **arg_rdptr,
 }
 
 /**
+ * Encode raw data of COMMAND_READ_MEMORY
+ * 
+ * @param arg_wrptr Pointer to write to
+ * @param arg_data Data structure to encode from
+ * @return  SR_OK if successfull, otherwise SR_ERR_...
+ */
+static int appadmm_frame_encode_read_memory(uint8_t **arg_wrptr,
+	const struct appadmm_request_data_read_memory_s *arg_data)
+{
+	if (arg_wrptr == NULL
+		|| arg_data == NULL)
+		return SR_ERR_ARG;
+	
+	write_u8_inc(&*arg_wrptr, arg_data->device_number);
+	write_u16le_inc(&*arg_wrptr, arg_data->memory_address);
+	write_u8_inc(&*arg_wrptr, arg_data->data_length);
+	
+	return SR_OK;
+}
+
+/**
+ * Decode raw data of COMMAND_READ_MEMORY
+ *
+ * @param arg_rdptr Pointer to read from
+ * @param arg_data Data structure to decode into
+ * @return SR_OK if successfull, otherweise SR_ERR_...
+ */
+static int appadmm_frame_decode_read_memory(const uint8_t **arg_rdptr,
+	struct appadmm_response_data_read_memory_s *arg_data,
+	uint8_t arg_data_length)
+{
+	int xloop;
+	
+	if (arg_rdptr == NULL
+		|| arg_data == NULL)
+		return SR_ERR_ARG;
+	
+	if(arg_data_length > sizeof(arg_data->data))
+		return SR_ERR_DATA;
+
+	/* redundent, for future compatibility with older models */
+	arg_data->data_length = arg_data_length;
+	
+	for(xloop = 0; xloop < arg_data_length; xloop++)
+		arg_data->data[xloop] = read_u8_inc(&*arg_rdptr);
+	
+	return SR_OK;
+}
+
+/**
  * Encode frame structure into transport level data for transmission
  * to device
  *
@@ -966,6 +1087,7 @@ static int appadmm_frame_encode(const struct appadmm_frame_s *arg_frame,
 {
 	uint8_t *wrptr;
 
+	int retr;
 	int size;
 
 	if (arg_frame == NULL
@@ -975,6 +1097,7 @@ static int appadmm_frame_encode(const struct appadmm_frame_s *arg_frame,
 		return SR_ERR_ARG;
 	}
 
+	retr = SR_OK;
 	size = appadmm_frame_request_size(arg_frame->command);
 
 	if (size < 0)
@@ -1002,6 +1125,13 @@ static int appadmm_frame_encode(const struct appadmm_frame_s *arg_frame,
 	case APPADMM_COMMAND_READ_BATTERY_LIFE:
 	case APPADMM_COMMAND_CAL_READING:
 		/* These frames have no payload, so nothing to do here */
+		break;
+		
+	case APPADMM_COMMAND_READ_MEMORY:
+		retr = appadmm_frame_encode_read_memory(&wrptr,
+			&arg_frame->request.read_memory);
+		if (retr < SR_OK)
+			return retr;
 		break;
 
 	default:
@@ -1086,6 +1216,15 @@ static int appadmm_frame_decode(const uint8_t *arg_data, int arg_size,
 			return retr;
 		break;
 
+	case APPADMM_COMMAND_READ_MEMORY:
+		if (size > APPADMM_FRAME_DATA_SIZE_RESPONSE_READ_MEMORY)
+			return SR_ERR_DATA;
+		retr = appadmm_frame_decode_read_memory(&rdptr,
+			&arg_out_frame->response.read_memory, size);
+		if (retr < SR_OK)
+			return retr;
+		break;
+
 	default:
 		sr_warn("Unimplemented command received: %d",
 			arg_out_frame->command);
@@ -1147,6 +1286,45 @@ SR_PRIV int appadmm_send(const struct sr_dev_inst *arg_sdi,
 }
 
 /**
+ * Transmit a frame to device (blocking) and immediatly request response
+ * The provided frame will be encoded and written to the serial device,
+ * afterwards receive is executed
+ *
+ * @param arg_sdi Device Instance
+ * @param arg_frame Frame
+ * @return TRUE/FALSE if successfull, otherweise SR_ERR_...
+ */
+SR_PRIV int appadmm_send_receive(const struct sr_dev_inst *arg_sdi,
+	const struct appadmm_frame_s *arg_frame)
+{
+	struct appadmm_context *devc;
+	int sr_cycles;
+	
+	int retr;
+	
+	if (!(devc = arg_sdi->priv))
+		return SR_ERR_BUG;
+	
+	retr = appadmm_send(arg_sdi, arg_frame);
+	if (retr < SR_OK)
+		return retr;
+	
+	devc->command_received = APPADMM_COMMAND_INVALID;
+	
+	sr_cycles = APPADMM_SR_TIMEOUT / APPADMM_READ_BLOCKING_TIMEOUT;
+	while (sr_cycles-- > 0) {
+		appadmm_receive(arg_sdi, TRUE);
+		if (devc->command_received == arg_frame->command) {
+			devc->command_received = APPADMM_COMMAND_INVALID;
+			return TRUE;
+		}
+	};
+	
+	devc->command_received = APPADMM_COMMAND_INVALID;
+	return FALSE;
+}
+
+/**
  * Callback-Function for data acquisition
  * will call appadmm_receive() to process received data
  *
@@ -1177,17 +1355,23 @@ SR_PRIV int appadmm_serial_receive(int arg_fd, int arg_revents,
 		if (appadmm_receive(sdi, FALSE) < SR_OK) {
 			sr_warn("Aborted in appadmm_receive");
 			abort = TRUE;
-		}
+		} else
+			if (devc->data_source == APPADMM_DATA_SOURCE_LIVE)
+				devc->sample_id++;
 	}
 
 	/* if no request is pending, send out a new one */
 	if (!devc->request_pending) {
-		frame.command = APPADMM_COMMAND_READ_DISPLAY;
-		if (appadmm_send(sdi, &frame) < SR_OK) {
-			sr_warn("Aborted in appadmm_send");
-			abort = TRUE;
-		} else {
-			devc->request_pending = TRUE;
+		switch (devc->data_source) {
+		case APPADMM_DATA_SOURCE_LIVE:
+			frame.command = APPADMM_COMMAND_READ_DISPLAY;
+			if (appadmm_send(sdi, &frame) < SR_OK) {
+				sr_warn("Aborted in appadmm_send");
+				abort = TRUE;
+			} else {
+				devc->request_pending = TRUE;
+			}
+			break;
 		}
 	}
 
@@ -1284,9 +1468,9 @@ SR_PRIV int appadmm_receive(const struct sr_dev_inst *arg_sdi,
 
 				/* ...and process it */
 				if (retr == SR_OK) {
-					sr_warn("Invalid frame decoded!");
 					retr = appadmm_process(arg_sdi, &frame);
-				}
+				} else
+					sr_warn("Invalid frame decoded!");
 
 				appadmm_receive_buffer_reset(devc);
 			}
@@ -1498,6 +1682,8 @@ SR_PRIV int appadmm_clear_context(struct appadmm_context *arg_devc)
 	arg_devc->model_id = APPADMM_MODEL_ID_INVALID;
 
 	arg_devc->connection_type = APPADMM_CONNECTION_TYPE_INVALID;
+	arg_devc->data_source = APPADMM_DATA_SOURCE_LIVE;
+	arg_devc->command_received = APPADMM_COMMAND_INVALID;
 
 	arg_devc->protocol_id = APPADMM_PROTOCOL_ID_INVALID;
 	arg_devc->major_protocol_version = 0;
@@ -1512,6 +1698,8 @@ SR_PRIV int appadmm_clear_context(struct appadmm_context *arg_devc)
 	arg_devc->recv_buffer[3] = 0;
 	arg_devc->recv_buffer_len = 0;
 
+	arg_devc->sample_id = 0;
+	
 	return SR_OK;
 };
 
@@ -1533,6 +1721,9 @@ SR_PRIV int appadmm_cap_channel(const enum appadmm_model_id_e arg_model_id,
 	case APPADMM_CHANNEL_INVALID:
 	default:
 		return FALSE;
+
+	case APPADMM_CHANNEL_SAMPLE_ID:
+		return TRUE;
 
 	case APPADMM_CHANNEL_MAIN:
 		return TRUE;
@@ -1618,6 +1809,8 @@ SR_PRIV const char *appadmm_channel_name(const enum appadmm_channel_e arg_channe
 	switch (arg_channel) {
 	case APPADMM_CHANNEL_INVALID:
 		return APPADMM_STRING_NA;
+	case APPADMM_CHANNEL_SAMPLE_ID:
+		return "sample_id";
 	case APPADMM_CHANNEL_MAIN:
 		return "main";
 	case APPADMM_CHANNEL_SUB:
