@@ -19,11 +19,7 @@
 
 /**
  * @file
- * @version 1
- *
- * APPA Transport Protocol
- *
- *
+ * APPA Transport Protocol handler
  */
 
 #ifndef LIBSIGROK_TP_APPA_H
@@ -34,22 +30,31 @@
 #include <libsigrok/libsigrok.h>
 #include "libsigrok-internal.h"
 
-#define SR_TP_APPA_MAX_DATA_SIZE 64
 #define SR_TP_APPA_HEADER_SIZE 4
+#define SR_TP_APPA_MAX_DATA_SIZE 64
 #define SR_TP_APPA_MAX_PAYLOAD_SIZE 68
-#define SR_TP_APPA_MAX_FRAME_SIZE 69
+#define SR_TP_APPA_MAX_PACKET_SIZE 69
 #define SR_TP_APPA_RECEIVE_TIMEOUT 500
 
+/**
+ * Instance object
+ *
+ * Must be created by the user and retain valid for the duration of the
+ * APPA protocol handling. Multiple instances can be active at the same time.
+ */
 struct sr_tp_appa_inst {
 	struct sr_serial_dev_inst *serial;
-	uint8_t buffer[SR_TP_APPA_MAX_FRAME_SIZE];
+	uint8_t buffer[SR_TP_APPA_MAX_PACKET_SIZE];
 	uint8_t buffer_size;
 };
 
+/**
+ * APPA transport package
+ */
 struct sr_tp_appa_packet {
-	uint8_t command;
-	uint8_t length;
-	uint8_t data[SR_TP_APPA_MAX_DATA_SIZE];
+	uint8_t command; /**< Command code, according to device documentation */
+	uint8_t length; /**< Number of bytes in data */
+	uint8_t data[SR_TP_APPA_MAX_DATA_SIZE]; /**< Payload data */
 };
 
 SR_PRIV int sr_tp_appa_init(struct sr_tp_appa_inst* arg_tpai,
