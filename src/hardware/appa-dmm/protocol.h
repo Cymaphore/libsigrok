@@ -47,16 +47,10 @@
 /* ************************************ */
 
 /**
- * Timeout of Handshake (read information)
- * when scanning (ms)
- */
-#define APPADMM_HANDSHAKE_TIMEOUT 1000
-
-/**
  * Timeout of general send/receive (read information)
  * when scanning (ms)
  */
-#define APPADMM_SR_TIMEOUT 1000
+#define APPADMM_SEND_RECEIVE_TIMEOUT 1000
 
 /**
  * Timeout when writing blocking (ms)

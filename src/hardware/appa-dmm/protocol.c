@@ -1311,7 +1311,7 @@ SR_PRIV int appadmm_send_receive(const struct sr_dev_inst *arg_sdi,
 	
 	devc->command_received = APPADMM_COMMAND_INVALID;
 	
-	sr_cycles = APPADMM_SR_TIMEOUT / APPADMM_READ_BLOCKING_TIMEOUT;
+	sr_cycles = APPADMM_SEND_RECEIVE_TIMEOUT / APPADMM_READ_BLOCKING_TIMEOUT;
 	while (sr_cycles-- > 0) {
 		appadmm_receive(arg_sdi, TRUE);
 		if (devc->command_received == arg_frame->command) {

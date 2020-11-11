@@ -54,8 +54,8 @@ static const uint32_t appadmm_devopts[] = {
 
 static const char *appadmm_data_sources[] = {
 	"Live", /**< APPADMM_DATA_SOURCE_LIVE */
-	"Mem", /**< APPADMM_DATA_SOURCE_MEM */
-	"Log", /**< APPADMM_DATA_SOURCE_LOG */
+	"MEM", /**< APPADMM_DATA_SOURCE_MEM */
+	"LOG", /**< APPADMM_DATA_SOURCE_LOG */
 };
 
 static GSList *appadmm_scan(struct sr_dev_driver *di, GSList *options)

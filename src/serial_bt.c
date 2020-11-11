@@ -56,7 +56,7 @@ static const struct scan_supported_item {
 	{ "121GW", SER_BT_CONN_BLE122, },
 	{ "Adafruit Bluefruit LE 8134", SER_BT_CONN_NRF51, },
 	{ "HC-05", SER_BT_CONN_RFCOMM, },
-	/* appa-dmm based identifiers {{{ */
+	/* appa-dmm identifiers {{{ */
 	{ "APPA 155B", SER_BT_CONN_APPADMM, },
 	{ "APPA 156B", SER_BT_CONN_APPADMM, },
 	{ "APPA 157B", SER_BT_CONN_APPADMM, },
@@ -150,10 +150,11 @@ static const char *conn_name_text(enum ser_bt_conn_t type)
  * - Insist on the "bt" prefix. Accept "bt" alone without any other
  *   additional field.
  * - The first field that follows is the connection type. Supported
- *   types are 'rfcomm', 'ble122', 'cc254x', 'appa-dmm' and potentially others
+ *   types are 'rfcomm', 'ble122', 'cc254x', 'appa-dmm', and potentially others
  *   in a future implementation.
  * - The next field is the remote device's address, either separated
- *   by colons or dashes or spaces, or not separated at all.
+ *   by dashes or spaces, or not separated at all. Colons are currently
+ *   not usable in most cases on the command line.
  * - Other parameters (RFCOMM channel, notify handles and write values)
  *   get derived from the connection type. A future implementation may
  *   accept more fields, but the syntax is yet to get developed.
@@ -163,9 +164,9 @@ static const char *conn_name_text(enum ser_bt_conn_t type)
  *
  * Examples:
  *   bt/rfcomm/11-22-33-44-55-66
- *   bt/ble122/88:6b:12:34:56:78
+ *   bt/ble122/88-6b-12-34-56-78
  *   bt/cc254x/0123456789ab
- *   bt/appa-dmm/88:6b:12:34:56:78
+ *   bt/appa-dmm/18-7a-12-34-56-78
  *
  * It's assumed that users easily can create those conn= specs from
  * available information, or that scan routines will create such specs
@@ -252,14 +253,31 @@ static int ser_bt_parse_conn_spec(
 			*cccd_val = 0x0003;
 		break;
 	case SER_BT_CONN_APPADMM:
+
+		/**
+		 * handle: 0x0049, uuid: 0000fff1-0000-1000-8000-00805f9b34fb
+		 */
 		if (read_hdl)
-			*read_hdl = 0x49;
+			*read_hdl = 0x0049;
+
+		/**
+		 * handle: 0x004c, uuid: 0000fff2-0000-1000-8000-00805f9b34fb
+		 */
 		if (write_hdl)
-			*write_hdl = 0x4c;
+			*write_hdl = 0x004c;
+
+		/**
+		 * handle: 0x004a, uuid: 00002902-0000-1000-8000-00805f9b34fb
+		 */
 		if (cccd_hdl)
-			*cccd_hdl = 0x4a;
+			*cccd_hdl = 0x004a;
+
+		/**
+		 * Enable notifications
+		 */
 		if (cccd_val)
 			*cccd_val = 0x0001;
+
 		break;
 	case SER_BT_CONN_NRF51:
 		/* TODO
