@@ -72,7 +72,6 @@ static GSList *appadmm_scan(struct sr_dev_driver *di, GSList *options)
 
 	GSList *it;
 	struct sr_config *src;
-	struct appadmm_frame_s frame;
 
 	devices = NULL;
 	drvc = di->context;
@@ -120,10 +119,11 @@ static GSList *appadmm_scan(struct sr_dev_driver *di, GSList *options)
 	sdi->status = SR_ST_INACTIVE;
 	sdi->driver = di;
 	sdi->priv = devc;
+	
+	sr_tp_appa_init(&devc->appa_inst, serial);
 
 	/* Scan for devices by sendind READ_INFORMATION */
-	frame.command = APPADMM_COMMAND_READ_INFORMATION;
-	appadmm_send_receive(sdi, &frame);
+	appadmm_read_information(sdi);
 
 	/* If received model is invalid or nothing received, abort */
 	if (devc->model_id == APPADMM_MODEL_ID_INVALID) {
@@ -248,7 +248,6 @@ static int appadmm_acquisition_start(const struct sr_dev_inst *sdi)
 	struct appadmm_context *devc;
 	struct sr_serial_dev_inst *serial;
 	struct sr_channel *channel;
-	struct appadmm_frame_s frame;
 
 	int retr;
 
@@ -273,11 +272,6 @@ static int appadmm_acquisition_start(const struct sr_dev_inst *sdi)
 		
 	case APPADMM_DATA_SOURCE_LOG:
 		channel->enabled = TRUE;
-		frame.command = APPADMM_COMMAND_READ_MEMORY;
-		frame.request.read_memory.device_number = 0;
-		frame.request.read_memory.memory_address = 0xa;
-		frame.request.read_memory.data_length = 4;
-		appadmm_send_receive(sdi, &frame);
 		break;
 	}
 	

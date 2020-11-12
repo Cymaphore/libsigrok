@@ -144,7 +144,7 @@ SR_PRIV int sr_tp_appa_term(struct sr_tp_appa_inst* arg_tpai)
  * @retval SR_ERR_... on error
  */
 SR_PRIV int sr_tp_appa_send(struct sr_tp_appa_inst* arg_tpai,
-	const struct sr_tp_appa_packet* arg_s_packet)
+	const struct sr_tp_appa_packet* arg_s_packet, gboolean arg_is_blocking)
 {
 	int retr;
 	uint8_t header[SR_TP_APPA_HEADER_SIZE];
@@ -178,9 +178,15 @@ SR_PRIV int sr_tp_appa_send(struct sr_tp_appa_inst* arg_tpai,
 		arg_s_packet->length)) != arg_s_packet->length)
 		return(SR_ERR_IO);
 
-	if ((retr = serial_write_nonblocking(arg_tpai->serial, &checksum,
-		sizeof(checksum))) != sizeof(checksum))
-		return(SR_ERR_IO);
+	if (arg_is_blocking) {
+		if ((retr = serial_write_blocking(arg_tpai->serial, &checksum,
+			sizeof(checksum), 50)) != sizeof(checksum))
+			return(SR_ERR_IO);
+	} else {
+		if ((retr = serial_write_nonblocking(arg_tpai->serial, &checksum,
+			sizeof(checksum))) != sizeof(checksum))
+			return(SR_ERR_IO);
+	}
 
 	return SR_OK;
 }
@@ -196,12 +202,13 @@ SR_PRIV int sr_tp_appa_send(struct sr_tp_appa_inst* arg_tpai,
  *
  * @param arg_tpai Instance object
  * @param arg_r_packet Received package
+ * @param arg_is_blocking Blocking request
  * @retval TRUE Packages was received and written to arg_r_packet
  * @retval FALSE No (complete) packet was available
  * @retval SR_ERR_... on error
  */
 SR_PRIV int sr_tp_appa_receive(struct sr_tp_appa_inst* arg_tpai,
-	struct sr_tp_appa_packet* arg_r_packet)
+	struct sr_tp_appa_packet* arg_r_packet, gboolean arg_is_blocking)
 {
 	int len;
 	int xloop;
@@ -216,8 +223,13 @@ SR_PRIV int sr_tp_appa_receive(struct sr_tp_appa_inst* arg_tpai,
 	retr = FALSE;
 
 	/* try to read from serial line */
-	len = serial_read_nonblocking(arg_tpai->serial,
-		buf, sizeof(buf));
+	if (arg_is_blocking)
+		len = serial_read_blocking(arg_tpai->serial,
+			buf, sizeof(buf), 50);
+	else
+		len = serial_read_nonblocking(arg_tpai->serial,
+			buf, sizeof(buf));
+		
 
 	if (len < SR_OK)
 		return len;
@@ -254,7 +266,7 @@ SR_PRIV int sr_tp_appa_receive(struct sr_tp_appa_inst* arg_tpai,
 
 				/* validate checksum */
 				if (sr_tp_appa_checksum(arg_tpai->buffer,
-					arg_tpai->buffer[3])
+					arg_tpai->buffer[3] + SR_TP_APPA_HEADER_SIZE)
 					== arg_tpai->buffer[arg_tpai->buffer_size - 1]) {
 					arg_r_packet->command = arg_tpai->buffer[2];
 					arg_r_packet->length = arg_tpai->buffer[3];
@@ -282,10 +294,8 @@ SR_PRIV int sr_tp_appa_receive(struct sr_tp_appa_inst* arg_tpai,
 		}
 	}
 
-	/* for now, just silently forget about the rest of the data. */
-
-	sr_tp_appa_buffer_reset(arg_tpai);
-
+	if (retr == TRUE)
+		sr_tp_appa_buffer_reset(arg_tpai);
 	return retr;
 }
 
@@ -315,13 +325,13 @@ SR_PRIV int sr_tp_appa_send_receive(struct sr_tp_appa_inst* arg_tpai,
 		return SR_ERR_BUG;
 
 	/* send packet */
-	if ((retr = sr_tp_appa_send(arg_tpai, arg_s_packet)) < SR_OK)
+	if ((retr = sr_tp_appa_send(arg_tpai, arg_s_packet, TRUE)) < SR_OK)
 		return retr;
 
 	/* wait for response packet in cycles */
 	sr_cycles = SR_TP_APPA_RECEIVE_TIMEOUT / 50;
 	while (sr_cycles-- > 0) {
-		retr = sr_tp_appa_receive(arg_tpai, arg_r_packet);
+		retr = sr_tp_appa_receive(arg_tpai, arg_r_packet, TRUE);
 
 		if (retr < SR_OK
 			|| retr == TRUE)

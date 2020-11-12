@@ -62,9 +62,9 @@ SR_PRIV int sr_tp_appa_init(struct sr_tp_appa_inst* arg_tpai,
 SR_PRIV int sr_tp_appa_term(struct sr_tp_appa_inst* arg_tpai);
 
 SR_PRIV int sr_tp_appa_send(struct sr_tp_appa_inst* arg_tpai,
-	const struct sr_tp_appa_packet* arg_s_packet);
+	const struct sr_tp_appa_packet* arg_s_packet, gboolean arg_is_blocking);
 SR_PRIV int sr_tp_appa_receive(struct sr_tp_appa_inst* arg_tpai,
-	struct sr_tp_appa_packet* arg_r_packet);
+	struct sr_tp_appa_packet* arg_r_packet, gboolean arg_is_blocking);
 SR_PRIV int sr_tp_appa_send_receive(struct sr_tp_appa_inst* arg_tpai,
 	const struct sr_tp_appa_packet* arg_s_packet,
 	struct sr_tp_appa_packet* arg_r_packet);

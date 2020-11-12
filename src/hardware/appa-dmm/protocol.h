@@ -40,6 +40,8 @@
 #include <libsigrok/libsigrok.h>
 #include "libsigrok-internal.h"
 
+#include "tp/appa.h"
+
 #define LOG_PREFIX "appa-dmm"
 
 /* ************************************ */
@@ -85,26 +87,6 @@
 /* ****** Message frame definitiions ****** */
 /* **************************************** */
 
-/**
- * Size of APPA message header
- */
-#define APPADMM_FRAME_HEADER_SIZE 4
-
-/**
- * Size of APPA message checksum
- */
-#define APPADMM_FRAME_CHECKSUM_SIZE 1
-
-/**
- * Maximum possible data size in a frame
- */
-#define APPADMM_FRAME_MAX_DATA_SIZE 64
-
-/**
- * Maximum possible frame size
- */
-#define APPADMM_FRAME_MAX_SIZE (APPADMM_FRAME_MAX_DATA_SIZE+APPADMM_FRAME_HEADER_SIZE+APPADMM_FRAME_CHECKSUM_SIZE)
-
 /* Size of request frame data per command */
 #define APPADMM_FRAME_DATA_SIZE_REQUEST_READ_INFORMATION 0
 #define APPADMM_FRAME_DATA_SIZE_REQUEST_READ_DISPLAY 0
@@ -141,16 +123,6 @@
  * resolvable or not
  */
 #define APPADMM_WORDCODE_TABLE_MIN 0x700000
-
-/**
- * Start code of valid frame
- */
-#define APPADMM_FRAME_START_VALUE 0x5555
-
-/**
- * Start code of valid frame, byte part
- */
-#define APPADMM_FRAME_START_VALUE_BYTE 0x55
 
 /* **************************************** */
 /* ****** State machine enumerations ****** */
@@ -755,33 +727,8 @@ struct appadmm_request_data_read_memory_s {
  * Response Data for APPADMM_COMMAND_READ_MEMORY
  */
 struct appadmm_response_data_read_memory_s {
-	uint8_t data[APPADMM_FRAME_MAX_DATA_SIZE]; /**< Requested data */
+	uint8_t data[SR_TP_APPA_MAX_DATA_SIZE]; /**< Requested data */
 	uint8_t data_length; /**< Length of requested data */
-};
-
-/**
- * Representation of communication frames
- * As union for more robust / convenient handling
- */
-struct appadmm_frame_s {
-	enum appadmm_command_e command;
-
-	union {
-
-		union {
-			struct appadmm_request_data_read_information_s read_information;
-			struct appadmm_request_data_read_display_s read_display;
-			struct appadmm_request_data_read_protocol_version_s read_protocol_version;
-			struct appadmm_request_data_read_memory_s read_memory;
-		} request;
-
-		union {
-			struct appadmm_response_data_read_information_s read_information;
-			struct appadmm_response_data_read_display_s read_display;
-			struct appadmm_response_data_read_protocol_version_s read_protocol_version;
-			struct appadmm_response_data_read_memory_s read_memory;
-		} response;
-	};
 };
 
 /* ************************************** */
@@ -794,6 +741,8 @@ struct appadmm_frame_s {
  * similar to _info structure in other drivers
  */
 struct appadmm_context {
+	struct sr_tp_appa_inst appa_inst; /**< Appa transport protocol instance */
+	
 	enum appadmm_model_id_e model_id; /**< Model identifier */
 
 	enum appadmm_connection_type_e connection_type; /**< Connection type */
@@ -807,8 +756,6 @@ struct appadmm_context {
 	struct sr_sw_limits limits; /**< Limits for data acquisition */
 
 	gboolean request_pending; /**< Active request blocker */
-	uint8_t recv_buffer[APPADMM_FRAME_MAX_SIZE]; /**< Reception buffer */
-	uint8_t recv_buffer_len; /**< Current number of valid frame bytes in buffer */
 	
 	uint64_t sample_id; /**< Sample ID counter */
 };
@@ -817,16 +764,10 @@ struct appadmm_context {
 /* ****** Declaration export to api.c ****** */
 /* ***************************************** */
 
-/* ****** Transmission / reception ****** */
-SR_PRIV int appadmm_send(const struct sr_dev_inst *arg_sdi,
-	const struct appadmm_frame_s *arg_frame);
-SR_PRIV int appadmm_send_receive(const struct sr_dev_inst *arg_sdi,
-	const struct appadmm_frame_s *arg_frame);
+/* ****** Commands ****** */
+SR_PRIV int appadmm_read_information(const struct sr_dev_inst *arg_sdi);
 SR_PRIV int appadmm_serial_receive(int arg_fd, int arg_revents,
 	void *arg_cb_data);
-SR_PRIV int appadmm_receive(const struct sr_dev_inst *arg_sdi,
-	gboolean arg_is_blocking);
-
 /* ****** UTIL: Struct handling ****** */
 SR_PRIV int appadmm_clear_context(struct appadmm_context *arg_devc);
 
