@@ -21,7 +21,7 @@
  * @file
  * @version 1
  *
- * APPA Transport Protocol
+ * APPA Transport Protocol handler
  *
  * Most of the devices produced by APPA use the same transport protocol. These
  * packages are exchanged over EA232, EA485, Serial/USB, BLE and possibly other
@@ -41,12 +41,19 @@
  * SS: Start-byte (0x55)
  * CC: Command code, depends on the device
  * LL: Abount of data bytes contained in packet (max. 64)
+ * DD: Data
  * CS: Checksum (sum of all bytes except for the checksum itself)
+ *
+ * Naming:
+ *
+ * Header: Start-byte (SS), Command (CC) and length (LL)
+ * Payload: Header and Data (DD)
+ * Packet: Payload and Checksum (CS)
  *
  * Examples:
  *
  * @code
- * 
+ *
  * // Include the appa transport protocol to your project
  * #include "tp/appa.h"
  *
@@ -75,7 +82,7 @@
  *	return retr;
  *
  * // check if a response was received
- * if (retr)
+ * if (retr > FALSE)
  *	sr_err("Response command was received, command: %d, first byte: %d",
  *		response.command, response.data[0]);
  * else
@@ -88,10 +95,18 @@
 #include <config.h>
 #include "tp/appa.h"
 
+#ifdef HAVE_SERIAL_COMM
+
 #define LOG_PREFIX "tp-appa"
 
 #define SR_TP_APPA_START_WORD 0x5555
 #define SR_TP_APPA_START_BYTE 0x55
+#define SR_TP_APPA_HEADER_SIZE 4
+#define SR_TP_APPA_RECEIVE_TIMEOUT 500
+#define SR_TP_APPA_PACKET_TIMING 50
+
+#define SR_TP_APPA_MAX_PAYLOAD_SIZE \
+	(SR_TP_APPA_MAX_DATA_SIZE + SR_TP_APPA_HEADER_SIZE)
 
 static uint8_t sr_tp_appa_checksum(const uint8_t *arg_data, uint8_t arg_size);
 static int sr_tp_appa_buffer_reset(struct sr_tp_appa_inst* arg_tpai);
@@ -100,7 +115,7 @@ static int sr_tp_appa_buffer_reset(struct sr_tp_appa_inst* arg_tpai);
  * Initialize APPA transport protocol
  *
  * @param arg_tpai Instance object
- * @param arg_serial Serial port for communication, must be ready to use
+ * @param arg_serial Serial port for communication, must be ready
  * @retval SR_OK on success
  * @retval SR_ERR_... on error
  */
@@ -116,7 +131,7 @@ SR_PRIV int sr_tp_appa_init(struct sr_tp_appa_inst* arg_tpai,
 
 	arg_tpai->serial = arg_serial;
 
-	return SR_ERR_BUG;
+	return SR_OK;
 }
 
 /**
@@ -130,13 +145,18 @@ SR_PRIV int sr_tp_appa_term(struct sr_tp_appa_inst* arg_tpai)
 {
 	if (arg_tpai == NULL)
 		return SR_ERR_BUG;
-	return SR_ERR_BUG;
+
+	return SR_OK;
 }
 
 /**
  * Send packet, non-blocking
  *
  * Write out package over serial connection and return immediatly
+ *
+ * Important: Write should be performed in a single operation, to avoid troubles
+ * with some APPA BLE implementations (any additional write puts additional
+ * delay to the communication).
  *
  * @param arg_tpai Instance object
  * @param arg_s_packet
@@ -147,48 +167,45 @@ SR_PRIV int sr_tp_appa_send(struct sr_tp_appa_inst* arg_tpai,
 	const struct sr_tp_appa_packet* arg_s_packet, gboolean arg_is_blocking)
 {
 	int retr;
-	uint8_t header[SR_TP_APPA_HEADER_SIZE];
-	uint8_t checksum;
+	int dcount;
+	uint8_t buf[SR_TP_APPA_MAX_PACKET_SIZE];
+	uint8_t *wrptr;
 
 	if (arg_tpai == NULL
 		|| arg_s_packet == NULL)
 		return SR_ERR_BUG;
+
 	if (arg_s_packet->length > SR_TP_APPA_MAX_PAYLOAD_SIZE)
 		return SR_ERR_DATA;
 
+	wrptr = &buf[0];
+
 	/* encode packet header */
+	write_u16le_inc(&wrptr, SR_TP_APPA_START_WORD);
+	write_u8_inc(&wrptr, arg_s_packet->command);
+	write_u8_inc(&wrptr, arg_s_packet->length);
 
-	header[0] = SR_TP_APPA_START_BYTE;
-	header[1] = SR_TP_APPA_START_BYTE;
-	header[2] = arg_s_packet->command;
-	header[4] = arg_s_packet->length;
+	/* copy data */
+	for (dcount = 0; dcount < arg_s_packet->length; dcount++)
+		write_u8_inc(&wrptr, arg_s_packet->data[dcount]);
 
-	/* calculate checksum */
-
-	checksum = sr_tp_appa_checksum((uint8_t*) & header, sizeof(header))
-		+ sr_tp_appa_checksum(arg_s_packet->data, arg_s_packet->length);
+	/* write checksum */
+	write_u8_inc(&wrptr, sr_tp_appa_checksum(buf,
+		arg_s_packet->length + SR_TP_APPA_HEADER_SIZE));
 
 	/* transmit packet */
-
-	if ((retr = serial_write_nonblocking(arg_tpai->serial, &header,
-		sizeof(header))) != sizeof(header))
-		return(SR_ERR_IO);
-
-	if ((retr = serial_write_nonblocking(arg_tpai->serial, arg_s_packet->data,
-		arg_s_packet->length)) != arg_s_packet->length)
-		return(SR_ERR_IO);
-
+	dcount = arg_s_packet->length + SR_TP_APPA_HEADER_SIZE + 1;
 	if (arg_is_blocking) {
-		if ((retr = serial_write_blocking(arg_tpai->serial, &checksum,
-			sizeof(checksum), 50)) != sizeof(checksum))
+		if ((retr = serial_write_blocking(arg_tpai->serial, buf,
+			dcount, 50)) != dcount)
 			return(SR_ERR_IO);
 	} else {
-		if ((retr = serial_write_nonblocking(arg_tpai->serial, &checksum,
-			sizeof(checksum))) != sizeof(checksum))
+		if ((retr = serial_write_nonblocking(arg_tpai->serial, buf,
+			dcount)) != dcount)
 			return(SR_ERR_IO);
 	}
 
-	return SR_OK;
+	return TRUE;
 }
 
 /**
@@ -213,7 +230,6 @@ SR_PRIV int sr_tp_appa_receive(struct sr_tp_appa_inst* arg_tpai,
 	int len;
 	int xloop;
 	int retr;
-
 	uint8_t buf[SR_TP_APPA_MAX_PACKET_SIZE * 3];
 
 	if (arg_tpai == NULL
@@ -225,11 +241,10 @@ SR_PRIV int sr_tp_appa_receive(struct sr_tp_appa_inst* arg_tpai,
 	/* try to read from serial line */
 	if (arg_is_blocking)
 		len = serial_read_blocking(arg_tpai->serial,
-			buf, sizeof(buf), 50);
+		buf, sizeof(buf), 50);
 	else
 		len = serial_read_nonblocking(arg_tpai->serial,
-			buf, sizeof(buf));
-		
+		buf, sizeof(buf));
 
 	if (len < SR_OK)
 		return len;
@@ -279,11 +294,10 @@ SR_PRIV int sr_tp_appa_receive(struct sr_tp_appa_inst* arg_tpai,
 						retr = SR_ERR_BUG;
 					else
 						retr = TRUE;
-					break;
 				} else {
 					retr = SR_ERR_IO;
-					break;
 				}
+				break;
 			}
 		}
 
@@ -294,8 +308,10 @@ SR_PRIV int sr_tp_appa_receive(struct sr_tp_appa_inst* arg_tpai,
 		}
 	}
 
+	/* dump the rest of the data, if a valid packet was completed */
 	if (retr == TRUE)
 		sr_tp_appa_buffer_reset(arg_tpai);
+
 	return retr;
 }
 
@@ -316,7 +332,7 @@ SR_PRIV int sr_tp_appa_send_receive(struct sr_tp_appa_inst* arg_tpai,
 	const struct sr_tp_appa_packet* arg_s_packet,
 	struct sr_tp_appa_packet* arg_r_packet)
 {
-	int sr_cycles;
+	int trycount;
 	int retr;
 
 	if (arg_tpai == NULL
@@ -325,12 +341,14 @@ SR_PRIV int sr_tp_appa_send_receive(struct sr_tp_appa_inst* arg_tpai,
 		return SR_ERR_BUG;
 
 	/* send packet */
-	if ((retr = sr_tp_appa_send(arg_tpai, arg_s_packet, TRUE)) < SR_OK)
+	if ((retr = sr_tp_appa_send(arg_tpai, arg_s_packet, TRUE)) < TRUE)
 		return retr;
 
+	retr = FALSE;
+
 	/* wait for response packet in cycles */
-	sr_cycles = SR_TP_APPA_RECEIVE_TIMEOUT / 50;
-	while (sr_cycles-- > 0) {
+	trycount = SR_TP_APPA_RECEIVE_TIMEOUT / SR_TP_APPA_PACKET_TIMING;
+	while (trycount-- > 0) {
 		retr = sr_tp_appa_receive(arg_tpai, arg_r_packet, TRUE);
 
 		if (retr < SR_OK
@@ -377,10 +395,14 @@ static int sr_tp_appa_buffer_reset(struct sr_tp_appa_inst* arg_tpai)
 {
 	if (arg_tpai == NULL)
 		return SR_ERR_BUG;
+
 	arg_tpai->buffer_size = 0;
 	arg_tpai->buffer[0] = 0;
 	arg_tpai->buffer[1] = 0;
 	arg_tpai->buffer[2] = 0;
 	arg_tpai->buffer[3] = 0;
+
 	return SR_OK;
 }
+
+#endif/*HAVE_SERIAL_COMM*/

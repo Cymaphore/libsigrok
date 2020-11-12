@@ -800,11 +800,12 @@ SR_PRIV int appadmm_serial_receive(int arg_fd, int arg_revents,
 	struct appadmm_request_data_read_display_s request;
 	struct appadmm_response_data_read_display_s response;
 	gboolean abort;
+	int retr;
 
 	(void) arg_fd;
 
 	abort = FALSE;
-
+	
 	if (!(sdi = arg_cb_data))
 		return FALSE;
 	if (!(devc = sdi->priv))
@@ -812,22 +813,23 @@ SR_PRIV int appadmm_serial_receive(int arg_fd, int arg_revents,
 
 	/* Try to receive and process incoming data */
 	if (arg_revents == G_IO_IN) {
-		if (appadmm_response_read_display(&devc->appa_inst, &response)
-			< SR_OK) {
-			sr_warn("Aborted in appadmm_receive");
+		if ((retr = appadmm_response_read_display(&devc->appa_inst,
+			&response)) < SR_OK) {
+			sr_warn("Aborted in appadmm_receive, result %d", retr);
 			abort = TRUE;
-		} else {
+		} else if(retr > FALSE) {
 			if (appadmm_process_read_display(sdi, &response)
 				< SR_OK) {
 				abort = TRUE;
 			}
+			devc->request_pending = FALSE;
 		}
 	}
 
 	/* if no request is pending, send out a new one */
 	if (!devc->request_pending) {
 		if (appadmm_request_read_display(&devc->appa_inst, &request)
-			< SR_OK) {
+			< TRUE) {
 			sr_warn("Aborted in appadmm_send");
 			abort = TRUE;
 		} else {
@@ -952,13 +954,13 @@ static int appadmm_rere_read_information(struct sr_tp_appa_inst* arg_tpai,
 		< SR_OK)
 		return retr;
 	if ((retr = sr_tp_appa_send_receive(arg_tpai, &packet_request,
-		&packet_response)) < SR_OK)
+		&packet_response)) < TRUE)
 		return retr;
 	if ((retr = appadmm_dec_read_information(&packet_response, arg_response))
 		< SR_OK)
 		return retr;
 	
-	return SR_OK;
+	return TRUE;
 }
 
 static int appadmm_enc_read_display(const struct appadmm_request_data_read_display_s *arg_read_display,
@@ -1047,7 +1049,7 @@ static int appadmm_request_read_display(struct sr_tp_appa_inst* arg_tpai,
 	if ((retr = sr_tp_appa_send(arg_tpai, &packet_request, FALSE)) < SR_OK)
 		return retr;
 	
-	return SR_OK;
+	return retr;
 }
 
 static int appadmm_response_read_display(struct sr_tp_appa_inst *arg_tpai,
@@ -1061,13 +1063,15 @@ static int appadmm_response_read_display(struct sr_tp_appa_inst *arg_tpai,
 		|| arg_response == NULL)
 		return SR_ERR_ARG;
 	
-	if ((retr = sr_tp_appa_receive(arg_tpai, &packet_response, FALSE)) < SR_OK)
+	if ((retr = sr_tp_appa_receive(arg_tpai, &packet_response, FALSE))
+		< TRUE)
 		return retr;
+	
 	if ((retr = appadmm_dec_read_display(&packet_response, arg_response))
 		< SR_OK)
 		return retr;
 	
-	return SR_OK;
+	return TRUE;
 }
 
 /**
@@ -1152,14 +1156,16 @@ static int appadmm_rere_read_memory(struct sr_tp_appa_inst* arg_tpai,
 	if ((retr = appadmm_enc_read_memory(arg_request, &packet_request))
 		< SR_OK)
 		return retr;
+	
 	if ((retr = sr_tp_appa_send_receive(arg_tpai, &packet_request,
-		&packet_response)) < SR_OK)
+		&packet_response)) < TRUE)
 		return retr;
+	
 	if ((retr = appadmm_dec_read_memory(&packet_response, arg_response))
 		< SR_OK)
 		return retr;
 	
-	return SR_OK;
+	return TRUE;
 }
 
 /**

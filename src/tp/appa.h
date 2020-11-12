@@ -19,6 +19,7 @@
 
 /**
  * @file
+ *
  * APPA Transport Protocol handler
  */
 
@@ -30,11 +31,10 @@
 #include <libsigrok/libsigrok.h>
 #include "libsigrok-internal.h"
 
-#define SR_TP_APPA_HEADER_SIZE 4
+#ifdef HAVE_SERIAL_COMM
+
 #define SR_TP_APPA_MAX_DATA_SIZE 64
-#define SR_TP_APPA_MAX_PAYLOAD_SIZE 68
 #define SR_TP_APPA_MAX_PACKET_SIZE 69
-#define SR_TP_APPA_RECEIVE_TIMEOUT 500
 
 /**
  * Instance object
@@ -68,5 +68,7 @@ SR_PRIV int sr_tp_appa_receive(struct sr_tp_appa_inst* arg_tpai,
 SR_PRIV int sr_tp_appa_send_receive(struct sr_tp_appa_inst* arg_tpai,
 	const struct sr_tp_appa_packet* arg_s_packet,
 	struct sr_tp_appa_packet* arg_r_packet);
+
+#endif/*HAVE_SERIAL_COMM*/
 
 #endif/*LIBSIGROK_TP_APPA_H*/
