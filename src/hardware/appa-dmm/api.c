@@ -54,6 +54,7 @@ static const uint32_t appadmm_devopts[] = {
 
 static const char *appadmm_data_sources[] = {
 	"Live", /**< APPADMM_DATA_SOURCE_LIVE */
+	"Calibration", /**< APPADMM_DATA_SOURCE_CALIBRATION */
 	"MEM", /**< APPADMM_DATA_SOURCE_MEM */
 	"LOG", /**< APPADMM_DATA_SOURCE_LOG */
 };
@@ -123,7 +124,7 @@ static GSList *appadmm_scan(struct sr_dev_driver *di, GSList *options)
 	sr_tp_appa_init(&devc->appa_inst, serial);
 
 	/* Scan for devices by sendind READ_INFORMATION */
-	appadmm_read_information(sdi);
+	appadmm_identify(sdi);
 
 	/* If received model is invalid or nothing received, abort */
 	if (devc->model_id == APPADMM_MODEL_ID_INVALID) {
@@ -140,10 +141,14 @@ static GSList *appadmm_scan(struct sr_dev_driver *di, GSList *options)
 		sdi->version,
 		sdi->serial_num,
 		devc->model_id);
-
+	
 	sr_channel_new(sdi, APPADMM_CHANNEL_SAMPLE_ID, SR_CHANNEL_ANALOG, appadmm_cap_channel(devc->model_id, APPADMM_CHANNEL_SAMPLE_ID), appadmm_channel_name(APPADMM_CHANNEL_SAMPLE_ID));
 	sr_channel_new(sdi, APPADMM_CHANNEL_MAIN, SR_CHANNEL_ANALOG, appadmm_cap_channel(devc->model_id, APPADMM_CHANNEL_MAIN), appadmm_channel_name(APPADMM_CHANNEL_MAIN));
 	sr_channel_new(sdi, APPADMM_CHANNEL_SUB, SR_CHANNEL_ANALOG, appadmm_cap_channel(devc->model_id, APPADMM_CHANNEL_SUB), appadmm_channel_name(APPADMM_CHANNEL_SUB));
+	/*sr_channel_new(sdi, APPADMM_CHANNEL_ADC_1, SR_CHANNEL_ANALOG, appadmm_cap_channel(devc->model_id, APPADMM_CHANNEL_ADC_1), appadmm_channel_name(APPADMM_CHANNEL_ADC_1));
+	sr_channel_new(sdi, APPADMM_CHANNEL_ADC_2, SR_CHANNEL_ANALOG, appadmm_cap_channel(devc->model_id, APPADMM_CHANNEL_ADC_2), appadmm_channel_name(APPADMM_CHANNEL_ADC_2));
+	sr_channel_new(sdi, APPADMM_CHANNEL_OFFSET, SR_CHANNEL_ANALOG, appadmm_cap_channel(devc->model_id, APPADMM_CHANNEL_OFFSET), appadmm_channel_name(APPADMM_CHANNEL_OFFSET));
+	sr_channel_new(sdi, APPADMM_CHANNEL_GAIN, SR_CHANNEL_ANALOG, appadmm_cap_channel(devc->model_id, APPADMM_CHANNEL_GAIN), appadmm_channel_name(APPADMM_CHANNEL_GAIN));*/
 
 	devices = g_slist_append(devices, sdi);
 
@@ -263,6 +268,10 @@ static int appadmm_acquisition_start(const struct sr_dev_inst *sdi)
 	switch (devc->data_source) {
 	default:
 	case APPADMM_DATA_SOURCE_LIVE:
+		channel->enabled = FALSE;
+		break;
+		
+	case APPADMM_DATA_SOURCE_CALIBRATION:
 		channel->enabled = FALSE;
 		break;
 		

@@ -90,7 +90,7 @@ static const char *appadmm_wordcode_name(const enum appadmm_wordcode_e arg_wordc
 /* ****** Commands ****** */
 /* ********************** */
 
-SR_PRIV int appadmm_read_information(const struct sr_dev_inst *arg_sdi)
+SR_PRIV int appadmm_identify(const struct sr_dev_inst *arg_sdi)
 {
 	char *delim;
 	struct sr_dev_inst *sdi_w;
@@ -754,43 +754,6 @@ static int appadmm_process_read_display(const struct sr_dev_inst *arg_sdi,
 
 	return retr;
 }
-#if 0
-/**
- * Process response to COMMAND_READ_MEMORY
- * Used to read from EEPROM memory of the device
- *
- * @param arg_sdi Device Instance
- * @param arg_data Data received with frame
- * @return SR_OK if successfull, otherwise SR_ERR_...
- */
-static int appadmm_process_read_memory(const struct sr_dev_inst *arg_sdi,
-	const struct appadmm_response_data_read_memory_s *arg_data)
-{
-	struct appadmm_context *devc;
-
-	int retr;
-
-	if (arg_sdi == NULL
-		|| arg_data == NULL)
-		return SR_ERR_ARG;
-
-	devc = arg_sdi->priv;
-
-	(void) arg_data->data;
-	(void) arg_data->data_length;
-	(void) devc;
-	
-	sr_err("%d %d %d %d",
-		arg_data->data[0],
-		arg_data->data[1],
-		arg_data->data[2],
-		arg_data->data[3]);
-
-	retr = SR_OK;
-
-	return retr;
-}
-#endif//1|0
 
 SR_PRIV int appadmm_serial_receive(int arg_fd, int arg_revents,
 	void *arg_cb_data)
@@ -1446,6 +1409,14 @@ SR_PRIV const char *appadmm_channel_name(const enum appadmm_channel_e arg_channe
 		return "main";
 	case APPADMM_CHANNEL_SUB:
 		return "sub";
+	case APPADMM_CHANNEL_ADC_1:
+		return "adc_1";
+	case APPADMM_CHANNEL_ADC_2:
+		return "adc_2";
+	case APPADMM_CHANNEL_OFFSET:
+		return "offset";
+	case APPADMM_CHANNEL_GAIN:
+		return "gain";
 	}
 
 	return APPADMM_STRING_NA;

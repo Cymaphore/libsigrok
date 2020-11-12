@@ -152,8 +152,9 @@ enum appadmm_frame_type_e {
  */
 enum appadmm_data_source_e {
 	APPADMM_DATA_SOURCE_LIVE = 0x00,
-	APPADMM_DATA_SOURCE_MEM = 0x01,
-	APPADMM_DATA_SOURCE_LOG = 0x02,
+	APPADMM_DATA_SOURCE_CALIBRATION = 0x01,
+	APPADMM_DATA_SOURCE_MEM = 0x02,
+	APPADMM_DATA_SOURCE_LOG = 0x03,
 };
 
 /**
@@ -164,6 +165,10 @@ enum appadmm_channel_e {
 	APPADMM_CHANNEL_SAMPLE_ID = 0x00,
 	APPADMM_CHANNEL_MAIN = 0x01,
 	APPADMM_CHANNEL_SUB = 0x02,
+	APPADMM_CHANNEL_ADC_1 = 0x03,
+	APPADMM_CHANNEL_ADC_2 = 0x04,
+	APPADMM_CHANNEL_OFFSET = 0x05,
+	APPADMM_CHANNEL_GAIN = 0x06,
 };
 
 /* **************************************** */
@@ -634,6 +639,56 @@ enum appadmm_functioncode_e {
 	APPADMM_FUNCTIONCODE_AC_DC_V_PV = 0x48,
 };
 
+/**
+ * Rotary code
+ * APPA 500 Series
+ */
+enum appadmm_rotarycode_500_e {
+    APPADMM_ROTARYCODE_500_NONE = 0x00,
+    APPADMM_ROTARYCODE_500_AC_V = 0x01,
+    APPADMM_ROTARYCODE_500_AC_MV = 0x02,
+    APPADMM_ROTARYCODE_500_DC_V = 0x03,
+    APPADMM_ROTARYCODE_500_DC_MV = 0x04,
+    APPADMM_ROTARYCODE_500_OHM = 0x05,
+    APPADMM_ROTARYCODE_500_A = 0x06,
+    APPADMM_ROTARYCODE_500_TEMP = 0x07,
+    APPADMM_ROTARYCODE_500_LOZ = 0x08,
+    APPADMM_ROTARYCODE_500_INVALID_09 = 0x09,
+};
+
+/**
+ * Rotary code
+ * APPA 200 Series
+ */
+enum appadmm_rotarycode_200_e {
+    APPADMM_ROTARYCODE_200_NONE = 0x00,
+    APPADMM_ROTARYCODE_200_AC_V = 0x01,
+    APPADMM_ROTARYCODE_200_AC_MV = 0x02,
+    APPADMM_ROTARYCODE_200_LOZ = 0x03,
+    APPADMM_ROTARYCODE_200_DC_V = 0x04,
+    APPADMM_ROTARYCODE_200_DC_MV = 0x05,
+    APPADMM_ROTARYCODE_200_OHM = 0x06,
+    APPADMM_ROTARYCODE_200_A = 0x07,
+    APPADMM_ROTARYCODE_200_FREQ = 0x08,
+    APPADMM_ROTARYCODE_200_TEMP = 0x09,
+};
+
+/**
+ * Rotary code
+ * APPA 150 Series
+ */
+enum appadmm_rotarycode_150_e {
+    APPADMM_ROTARYCODE_150_NONE = 0x00,
+    APPADMM_ROTARYCODE_150_V = 0x01,
+    APPADMM_ROTARYCODE_150_A = 0x02,
+    APPADMM_ROTARYCODE_150_W = 0x03,
+    APPADMM_ROTARYCODE_150_OHM = 0x04,
+    APPADMM_ROTARYCODE_150_CAP = 0x05,
+    APPADMM_ROTARYCODE_150_FLEX_CURRENT = 0x06,
+    APPADMM_ROTARYCODE_150_TEMP = 0x07,
+    APPADMM_ROTARYCODE_150_INVALID_08 = 0x08,
+    APPADMM_ROTARYCODE_150_INVALID_09 = 0x09,
+};
 /* ************************************************************ */
 /* ****** Structures representing payload of data frames ****** */
 /* ************************************************************ */
@@ -690,7 +745,7 @@ struct appadmm_request_data_read_display_s {
 struct appadmm_response_data_read_display_s {
 	enum appadmm_functioncode_e function_code; /**< Function Code */
 	enum appadmm_autotest_e auto_test; /**< Auto or manual Test */
-	uint8_t range_code; /**< @TODO Implement Table 7.1 of protocol spec, only required for calibration */
+	uint8_t range_code; /**< Range code, depending on function_code and unit */
 	enum appadmm_autorange_e auto_range; /**< Automatic or manual range */
 
 	struct appadmm_display_data_s main_display_data; /**< Reading of main (lower) display value */
@@ -731,6 +786,30 @@ struct appadmm_response_data_read_memory_s {
 	uint8_t data_length; /**< Length of requested data */
 };
 
+/**
+ * Request Data for APPADMM_COMMAND_READ_CALIBRATION
+ */
+struct appadmm_request_data_read_calibration_s {
+	/* No rquest data for this command */
+};
+
+/**
+ * Response Data for APPADMM_COMMAND_READ_CALIBRATION
+ */
+struct appadmm_response_data_read_calibration_s {
+	union {
+		enum appadmm_rotarycode_500_e rotary_code_500;
+		enum appadmm_rotarycode_200_e rotary_code_200;
+		enum appadmm_rotarycode_150_e rotary_code_150;
+	};
+	enum appadmm_functioncode_e function_code; /**< Function Code */
+	struct appadmm_display_data_s main_display_data; /**< Reading of main (lower) display value */
+	float original_adc_data_1; /**< Original ADC Data 1 */
+	float original_adc_data_2; /**< Original ADC Data 2 */
+	float offset_data; /**< Offset (debug value) */
+	float gain_data; /**< Gain (debug value) */
+};
+
 /* ************************************** */
 /* ****** State machine structures ****** */
 /* ************************************** */
@@ -765,7 +844,7 @@ struct appadmm_context {
 /* ***************************************** */
 
 /* ****** Commands ****** */
-SR_PRIV int appadmm_read_information(const struct sr_dev_inst *arg_sdi);
+SR_PRIV int appadmm_identify(const struct sr_dev_inst *arg_sdi);
 SR_PRIV int appadmm_serial_receive(int arg_fd, int arg_revents,
 	void *arg_cb_data);
 /* ****** UTIL: Struct handling ****** */
