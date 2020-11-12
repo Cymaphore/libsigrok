@@ -160,7 +160,7 @@ SR_PRIV int sr_tp_appa_term(struct sr_tp_appa_inst* arg_tpai)
  *
  * @param arg_tpai Instance object
  * @param arg_s_packet
- * @retval SR_OK on success
+ * @retval TRUE on successfull handover to serial send
  * @retval SR_ERR_... on error
  */
 SR_PRIV int sr_tp_appa_send(struct sr_tp_appa_inst* arg_tpai,
