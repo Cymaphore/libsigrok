@@ -152,9 +152,8 @@ enum appadmm_frame_type_e {
  */
 enum appadmm_data_source_e {
 	APPADMM_DATA_SOURCE_LIVE = 0x00,
-	APPADMM_DATA_SOURCE_CALIBRATION = 0x01,
-	APPADMM_DATA_SOURCE_MEM = 0x02,
-	APPADMM_DATA_SOURCE_LOG = 0x03,
+	APPADMM_DATA_SOURCE_MEM = 0x01,
+	APPADMM_DATA_SOURCE_LOG = 0x02,
 };
 
 /**
@@ -162,13 +161,8 @@ enum appadmm_data_source_e {
  */
 enum appadmm_channel_e {
 	APPADMM_CHANNEL_INVALID = -1,
-	APPADMM_CHANNEL_SAMPLE_ID = 0x00,
-	APPADMM_CHANNEL_MAIN = 0x01,
-	APPADMM_CHANNEL_SUB = 0x02,
-	APPADMM_CHANNEL_ADC_1 = 0x03,
-	APPADMM_CHANNEL_ADC_2 = 0x04,
-	APPADMM_CHANNEL_OFFSET = 0x05,
-	APPADMM_CHANNEL_GAIN = 0x06,
+	APPADMM_CHANNEL_DISPLAY_PRIMARY = 0x00,
+	APPADMM_CHANNEL_DISPLAY_SECONDARY = 0x01,
 };
 
 /* **************************************** */
@@ -726,8 +720,8 @@ struct appadmm_request_data_read_information_s {
  * Response Data for APPADMM_COMMAND_READ_INFORMATION
  */
 struct appadmm_response_data_read_information_s {
-	char model_name[32]; /**< String 0x20 filled model name of device (branded) */
-	char serial_number[16]; /**< String 0x20 filled serial number of device */
+	char model_name[33]; /**< String 0x20 filled model name of device (branded) */
+	char serial_number[17]; /**< String 0x20 filled serial number of device */
 	enum appadmm_model_id_e model_id; /*< Model ID Number @appadmm_model_id_e */
 	u_int16_t firmware_version; /*< Firmware version */
 };
