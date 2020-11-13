@@ -159,7 +159,6 @@ static int appadmm_is_response_size_valid(enum appadmm_command_e arg_command,
 {
 	int size;
 
-
 	size = appadmm_get_response_size(arg_command);
 
 	if (size < SR_OK)
@@ -489,6 +488,106 @@ static int appadmm_rere_read_memory(struct sr_tp_appa_inst* arg_tpai,
 		return retr;
 	
 	return TRUE;
+}
+
+static int appadmm_dec_storage_info(const struct appadmm_response_data_read_memory_s
+*arg_read_memory, struct appadmm_storage_info_s *arg_storage_info)
+{
+	const uint8_t *rdptr;
+	
+	if (arg_read_memory == NULL
+		|| arg_storage_info == NULL)
+		return SR_ERR_ARG;
+	
+	if (arg_read_memory->data_length != 6)
+		return SR_ERR_DATA;
+	
+	rdptr = &arg_read_memory->data[0];
+	
+	arg_storage_info[APPADMM_STORAGE_LOG].rate = read_u16be_inc(&rdptr);
+	arg_storage_info[APPADMM_STORAGE_LOG].amount = read_u16be_inc(&rdptr);
+	arg_storage_info[APPADMM_STORAGE_MEM].amount = read_u16be_inc(&rdptr);
+	
+	/** @TODO do device detection */
+	arg_storage_info[APPADMM_STORAGE_MEM].entry_size = 5;
+	arg_storage_info[APPADMM_STORAGE_MEM].entry_count = 500;
+	arg_storage_info[APPADMM_STORAGE_MEM].mem_offset = 0x500;
+	arg_storage_info[APPADMM_STORAGE_MEM].mem_count = 2;
+	
+	arg_storage_info[APPADMM_STORAGE_LOG].entry_size = 5;
+	arg_storage_info[APPADMM_STORAGE_LOG].entry_count = 10000;
+	arg_storage_info[APPADMM_STORAGE_LOG].mem_offset = 0x1000;
+	arg_storage_info[APPADMM_STORAGE_LOG].mem_count = 4;
+	
+	
+	return SR_OK;
+}
+
+static int appadmm_enc_read_storage(struct appadmm_request_data_read_memory_s *arg_read_memory,
+	struct appadmm_storage_info_s *arg_storage_info, int arg_start_entry,
+	int arg_entry_count)
+{
+	int address_position;
+	int fetch_count;
+	
+	if (arg_read_memory == NULL
+		|| arg_storage_info == NULL)
+		return SR_ERR_ARG;
+	
+	if (arg_start_entry >
+		arg_storage_info->mem_count * arg_storage_info->entry_count)
+		return SR_ERR_ARG;
+	
+	address_position = (arg_start_entry % arg_storage_info->mem_count);
+		
+	if(address_position + arg_entry_count > arg_storage_info->entry_count)
+		fetch_count = arg_storage_info->entry_count - address_position;
+	else
+		fetch_count = arg_entry_count;
+	
+	arg_read_memory->device_number = arg_start_entry /
+		arg_storage_info->mem_count;
+	arg_read_memory->memory_address = arg_storage_info->mem_offset
+		+ address_position * arg_storage_info->entry_size;;
+	arg_read_memory->data_length = fetch_count * arg_storage_info->entry_size;
+	
+	while (arg_read_memory->data_length > SR_TP_APPA_MAX_DATA_SIZE)
+		arg_read_memory->data_length -= arg_storage_info->entry_size;
+	
+	if (arg_read_memory->device_number > arg_storage_info->mem_count)
+		return SR_ERR_BUG;
+	
+	return SR_OK;
+}
+
+static int appadmm_dec_read_storage(const struct appadmm_response_data_read_memory_s
+	*arg_read_memory, struct appadmm_storage_info_s *arg_storage_info,
+	struct appadmm_display_data_s *arg_display_data)
+{
+	const uint8_t *rdptr;
+	uint8_t u8;
+	int xloop;
+	
+	if (arg_read_memory == NULL
+		|| arg_storage_info == NULL)
+		return SR_ERR_ARG;
+
+	rdptr = &arg_read_memory->data[0];
+
+	for(xloop = 0; xloop < arg_read_memory->data_length /
+		arg_storage_info->entry_size; xloop++) {
+		arg_display_data[xloop].reading = read_i24le_inc(&rdptr);
+
+		u8 = read_u8_inc(&rdptr);
+		arg_display_data[xloop].dot = u8 & 0x7;
+		arg_display_data[xloop].unit = u8 >> 3;
+
+		u8 = read_u8_inc(&rdptr);
+		arg_display_data[xloop].data_content = u8 & 0x7f;
+		arg_display_data[xloop].overload = u8 >> 7;
+	}
+	
+	return SR_OK;
 }
 
 #endif/*LIBSIGROK_HARDWARE_APPA_DMM_PACKET_H*/

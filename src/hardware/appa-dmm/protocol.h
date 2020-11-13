@@ -69,6 +69,8 @@
  */
 #define APPADMM_CONF_SERIAL "9600/8n1"
 
+#define APPADMM_STORAGE_INFO_COUNT 2
+
 /* ********************* */
 /* ****** Presets ****** */
 /* ********************* */
@@ -129,16 +131,6 @@
 /* **************************************** */
 
 /**
- * Type of connection
- * saved in context
- */
-enum appadmm_connection_type_e {
-	APPADMM_CONNECTION_TYPE_INVALID = 0x00,
-	APPADMM_CONNECTION_TYPE_SERIAL = 0x01,
-	APPADMM_CONNECTION_TYPE_BLE = 0x02,
-};
-
-/**
  * Type of frame
  */
 enum appadmm_frame_type_e {
@@ -154,6 +146,14 @@ enum appadmm_data_source_e {
 	APPADMM_DATA_SOURCE_LIVE = 0x00,
 	APPADMM_DATA_SOURCE_MEM = 0x01,
 	APPADMM_DATA_SOURCE_LOG = 0x02,
+};
+
+/**
+ * Storage definition
+ */
+enum appadmm_storage_e {
+	APPADMM_STORAGE_MEM = 0x00,
+	APPADMM_STORAGE_LOG = 0x01,
 };
 
 /**
@@ -710,6 +710,19 @@ struct appadmm_display_data_s {
 };
 
 /**
+ * Log information
+ */
+struct appadmm_storage_info_s {
+	int amount;
+	int rate;
+	int entry_size;
+	int entry_count;
+	int mem_offset;
+	int mem_count;
+	
+};
+
+/**
  * Request Data for APPADMM_COMMAND_READ_INFORMATION
  */
 struct appadmm_request_data_read_information_s {
@@ -815,22 +828,14 @@ struct appadmm_response_data_read_calibration_s {
  */
 struct appadmm_context {
 	struct sr_tp_appa_inst appa_inst; /**< Appa transport protocol instance */
+	gboolean request_pending; /**< Active request blocker */
 	
 	enum appadmm_model_id_e model_id; /**< Model identifier */
 
-	enum appadmm_connection_type_e connection_type; /**< Connection type */
 	enum appadmm_data_source_e data_source; /**< Data source */
-	enum appadmm_command_e command_received; /**< Used for appadmm_send_receive() */
-
-	enum appadmm_protocol_id_e protocol_id; /**< APPA Protocol Identifier */
-	uint8_t major_protocol_version; /**< APPA Protocol major version */
-	uint8_t minor_protocol_version; /**< APPA Protocol minor version */
+	struct appadmm_storage_info_s storage_info[APPADMM_STORAGE_INFO_COUNT]; /**< LOG and MEM info */
 
 	struct sr_sw_limits limits; /**< Limits for data acquisition */
-
-	gboolean request_pending; /**< Active request blocker */
-	
-	uint64_t sample_id; /**< Sample ID counter */
 };
 
 /* ***************************************** */
@@ -839,10 +844,12 @@ struct appadmm_context {
 
 /* ****** Commands ****** */
 SR_PRIV int appadmm_identify(const struct sr_dev_inst *arg_sdi);
-SR_PRIV int appadmm_serial_receive(int arg_fd, int arg_revents,
+SR_PRIV int appadmm_storage_info(const struct sr_dev_inst *arg_sdi,
+	struct appadmm_storage_info_s *arg_loginfo);
+SR_PRIV int appadmm_serial_receive_live(int arg_fd, int arg_revents,
 	void *arg_cb_data);
-/* ****** UTIL: Struct handling ****** */
-SR_PRIV int appadmm_clear_context(struct appadmm_context *arg_devc);
+SR_PRIV int appadmm_serial_receive_storage(int arg_fd, int arg_revents,
+	void *arg_cb_data);
 
 /* ****** UTIL: Model capability handling ****** */
 SR_PRIV int appadmm_cap_channel(const enum appadmm_model_id_e arg_model_id,
@@ -851,5 +858,9 @@ SR_PRIV int appadmm_cap_channel(const enum appadmm_model_id_e arg_model_id,
 /* ****** Resolvers / Tables ****** */
 SR_PRIV const char *appadmm_channel_name(const enum appadmm_channel_e arg_channel);
 SR_PRIV const char *appadmm_model_id_name(const enum appadmm_model_id_e arg_model_id);
+
+/* ****** UTIL: Struct handling ****** */
+SR_PRIV int appadmm_clear_context(struct appadmm_context *arg_devc);
+SR_PRIV int appadmm_clear_storage_info(struct appadmm_storage_info_s *arg_storage_info);
 
 #endif

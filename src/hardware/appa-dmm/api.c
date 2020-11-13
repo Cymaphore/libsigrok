@@ -104,12 +104,6 @@ static GSList *appadmm_scan(struct sr_dev_driver *di, GSList *options)
 	if (!serialcomm)
 		serialcomm = APPADMM_CONF_SERIAL;
 
-	devc->connection_type = APPADMM_CONNECTION_TYPE_SERIAL;
-
-	if (conn != NULL)
-		if (strncmp(conn, "bt/", 3) == 0)
-			devc->connection_type = APPADMM_CONNECTION_TYPE_BLE;
-
 	serial = sr_serial_dev_inst_new(conn, serialcomm);
 
 	if (serial_open(serial, SERIAL_RDWR) != SR_OK)
@@ -136,7 +130,7 @@ static GSList *appadmm_scan(struct sr_dev_driver *di, GSList *options)
 		return NULL;
 	}
 
-	sr_info("APPA-Device DETECTED; Vendor: %s, Model: %s, OEM-Model: %s, Version: %s, Serial number: %s, Model ID: %i",
+	sr_err("APPA-Device DETECTED; Vendor: %s, Model: %s, OEM-Model: %s, Version: %s, Serial number: %s, Model ID: %i",
 		sdi->vendor,
 		sdi->model,
 		appadmm_model_id_name(devc->model_id),
@@ -271,15 +265,33 @@ static int appadmm_acquisition_start(const struct sr_dev_inst *sdi)
 	devc = sdi->priv;
 	serial = sdi->conn;
 	
-	
-	
-	sr_sw_limits_acquisition_start(&devc->limits);
-	retr = std_session_send_df_header(sdi);
-	if (retr < SR_OK)
-		return retr;
+	switch (devc->data_source) {
+	case APPADMM_DATA_SOURCE_LIVE:
+		sr_sw_limits_acquisition_start(&devc->limits);
+		if ((retr = std_session_send_df_header(sdi)) < SR_OK)
+			return retr;
 
-	retr = serial_source_add(sdi->session, serial, G_IO_IN, 10,
-		appadmm_serial_receive, (void *) sdi);
+		retr = serial_source_add(sdi->session, serial, G_IO_IN, 10,
+			appadmm_serial_receive_live, (void *) sdi);
+		break;
+		
+	case APPADMM_DATA_SOURCE_MEM:
+	case APPADMM_DATA_SOURCE_LOG:
+		if((retr = appadmm_storage_info(sdi, devc->storage_info)) < SR_OK)
+			return retr;
+
+		if (devc->limits.limit_samples < 1
+			|| devc->limits.limit_samples > (uint64_t)devc->storage_info[APPADMM_STORAGE_LOG].amount * 2)
+			devc->limits.limit_samples = devc->storage_info[APPADMM_STORAGE_LOG].amount * 2;
+		
+		sr_sw_limits_acquisition_start(&devc->limits);
+		if ((retr = std_session_send_df_header(sdi)) < SR_OK)
+			return retr;
+
+		retr = serial_source_add(sdi->session, serial, G_IO_IN, 10,
+			appadmm_serial_receive_storage, (void *) sdi);
+		break;
+	}
 
 	return retr;
 }

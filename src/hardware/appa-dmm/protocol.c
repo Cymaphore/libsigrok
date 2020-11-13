@@ -118,7 +118,6 @@ static int appadmm_transform_display_data(const struct sr_dev_inst *arg_sdi,
 	enum appadmm_channel_e arg_channel,
 	const struct appadmm_response_data_read_display_s *arg_data)
 {
-	struct appadmm_context *devc;
 	struct sr_datafeed_packet packet;
 
 	struct sr_datafeed_analog analog;
@@ -130,11 +129,12 @@ static int appadmm_transform_display_data(const struct sr_dev_inst *arg_sdi,
 
 	int retr;
 
+	struct appadmm_context *devc;
+	const struct appadmm_display_data_s *display_data;
 	gboolean is_dash;
 	double unit_factor;
 	double display_reading_value;
 	int8_t digits;
-	const struct appadmm_display_data_s *display_data;
 
 	if (arg_sdi == NULL
 		|| arg_data == NULL)
@@ -634,6 +634,7 @@ static int appadmm_transform_display_data(const struct sr_dev_inst *arg_sdi,
 		analog.data = &val;
 		analog.encoding->unitsize = sizeof(val);
 		retr = sr_session_send(arg_sdi, &packet);
+		sr_sw_limits_update_samples_read(&devc->limits, 1);
 	}
 
 	return retr;
@@ -666,19 +667,6 @@ static int appadmm_process_read_display(const struct sr_dev_inst *arg_sdi,
 	devc = arg_sdi->priv;
 	retr = SR_OK;
 
-	/* Sample ID */
-	/*
-	channel = g_slist_nth_data(arg_sdi->channels, APPADMM_CHANNEL_SAMPLE_ID);
-	if (channel != NULL
-		&& channel->enabled) {
-		if (appadmm_cap_channel(devc->model_id, APPADMM_CHANNEL_SAMPLE_ID))
-			retr = appadmm_transform_display_data(arg_sdi,
-			APPADMM_CHANNEL_SAMPLE_ID, arg_data);
-		if (retr < SR_OK)
-			return retr;
-	}
-	*/
-
 	/* Main reading */
 	channel = g_slist_nth_data(arg_sdi->channels, APPADMM_CHANNEL_DISPLAY_PRIMARY);
 	if (channel != NULL 
@@ -704,13 +692,45 @@ static int appadmm_process_read_display(const struct sr_dev_inst *arg_sdi,
 	return retr;
 }
 
-SR_PRIV int appadmm_serial_receive(int arg_fd, int arg_revents,
-	void *arg_cb_data)
+SR_PRIV int appadmm_storage_info(const struct sr_dev_inst *arg_sdi,
+	struct appadmm_storage_info_s *arg_storage_info)
 {
 	struct appadmm_context *devc;
+	
+	int retr;
+	
+	struct appadmm_request_data_read_memory_s request;
+	struct appadmm_response_data_read_memory_s response;
+
+	retr = SR_OK;
+	
+	if (arg_sdi == NULL)
+		return SR_ERR_ARG;
+
+	devc = arg_sdi->priv;
+	
+	request.device_number = 0;
+	request.memory_address = 0xa;
+	request.data_length = 6;
+	
+	if((retr = appadmm_rere_read_memory(&devc->appa_inst,
+		&request, &response)) < SR_OK)
+		return retr;
+	
+	if((retr = appadmm_dec_storage_info(&response, arg_storage_info)) < SR_OK)
+		return retr;
+
+	return retr;
+}
+
+SR_PRIV int appadmm_serial_receive_live(int arg_fd, int arg_revents,
+	void *arg_cb_data)
+{
 	struct sr_dev_inst *sdi;
+	struct appadmm_context *devc;
 	struct appadmm_request_data_read_display_s request;
 	struct appadmm_response_data_read_display_s response;
+	
 	gboolean abort;
 	int retr;
 
@@ -760,41 +780,62 @@ SR_PRIV int appadmm_serial_receive(int arg_fd, int arg_revents,
 	return TRUE;
 }
 
-/* *********************************** */
-/* ****** UTIL: Struct handling ****** */
-/* *********************************** */
-
-/**
- * Initialize Device context
- * the structure contains the state machine and non-standard ID data
- * for the device.
- *
- * @param arg_devc Context
- * @return SR_OK on success, SR_ERR_... on failure
- */
-SR_PRIV int appadmm_clear_context(struct appadmm_context *arg_devc)
+SR_PRIV int appadmm_serial_receive_storage(int arg_fd, int arg_revents,
+	void *arg_cb_data)
 {
-	if (arg_devc == NULL)
-		return SR_ERR_BUG;
-
-	arg_devc->model_id = APPADMM_MODEL_ID_INVALID;
-
-	arg_devc->connection_type = APPADMM_CONNECTION_TYPE_INVALID;
-	arg_devc->data_source = APPADMM_DATA_SOURCE_LIVE;
-	arg_devc->command_received = APPADMM_COMMAND_INVALID;
-
-	arg_devc->protocol_id = APPADMM_PROTOCOL_ID_INVALID;
-	arg_devc->major_protocol_version = 0;
-	arg_devc->minor_protocol_version = 0;
-
-	sr_sw_limits_init(&arg_devc->limits);
-
-	arg_devc->request_pending = FALSE;
-
-	arg_devc->sample_id = 0;
+	struct sr_dev_inst *sdi;
+	struct appadmm_context *devc;
+	struct appadmm_request_data_read_display_s request;
+	struct appadmm_response_data_read_display_s response;
 	
-	return SR_OK;
-};
+	gboolean abort;
+	int retr;
+
+	(void) arg_fd;
+
+	abort = FALSE;
+	
+	if (!(sdi = arg_cb_data))
+		return FALSE;
+	if (!(devc = sdi->priv))
+		return FALSE;
+
+	/* Try to receive and process incoming data */
+	if (arg_revents == G_IO_IN) {
+		if ((retr = appadmm_response_read_display(&devc->appa_inst,
+			&response)) < SR_OK) {
+			sr_warn("Aborted in appadmm_receive, result %d", retr);
+			abort = TRUE;
+		} else if(retr > FALSE) {
+			if (appadmm_process_read_display(sdi, &response)
+				< SR_OK) {
+				abort = TRUE;
+			}
+			devc->request_pending = FALSE;
+		}
+	}
+
+	/* if no request is pending, send out a new one */
+	if (!devc->request_pending) {
+		if (appadmm_request_read_display(&devc->appa_inst, &request)
+			< TRUE) {
+			sr_warn("Aborted in appadmm_send");
+			abort = TRUE;
+		} else {
+			devc->request_pending = TRUE;
+		}
+	}
+
+	/* check for limits or stop request */
+	if (sr_sw_limits_check(&devc->limits)
+		|| abort == TRUE) {
+		sr_info("Stopping acquisition");
+		sr_dev_acquisition_stop(sdi);
+		return FALSE;
+	}
+
+	return TRUE;
+}
 
 /* ********************************************* */
 /* ****** UTIL: Model capability handling ****** */
@@ -855,4 +896,49 @@ SR_PRIV int appadmm_cap_channel(const enum appadmm_model_id_e arg_model_id,
 
 	}
 	return SR_ERR_BUG;
+}
+
+
+/**
+ * Initialize Device context
+ * the structure contains the state machine and non-standard ID data
+ * for the device.
+ *
+ * @param arg_devc Context
+ * @return SR_OK on success, SR_ERR_... on failure
+ */
+SR_PRIV int appadmm_clear_context(struct appadmm_context *arg_devc)
+{
+	if (arg_devc == NULL)
+		return SR_ERR_BUG;
+
+	arg_devc->model_id = APPADMM_MODEL_ID_INVALID;
+
+	arg_devc->data_source = APPADMM_DATA_SOURCE_LIVE;
+
+	sr_sw_limits_init(&arg_devc->limits);
+	appadmm_clear_storage_info(arg_devc->storage_info);
+
+	arg_devc->request_pending = FALSE;
+	
+	return SR_OK;
+};
+
+SR_PRIV int appadmm_clear_storage_info(struct appadmm_storage_info_s *arg_storage_info)
+{
+	int xloop;
+	
+	if (arg_storage_info == NULL)
+		return SR_ERR_BUG;
+	
+	for (xloop = 0; xloop < APPADMM_STORAGE_INFO_COUNT; xloop++) {
+		arg_storage_info[xloop].amount = 0;		
+		arg_storage_info[xloop].rate = 0;
+		arg_storage_info[xloop].entry_size = 0;
+		arg_storage_info[xloop].entry_count = 0;
+		arg_storage_info[xloop].mem_count = 0;
+		arg_storage_info[xloop].mem_offset = 0;
+	}
+	
+	return SR_OK;
 }
