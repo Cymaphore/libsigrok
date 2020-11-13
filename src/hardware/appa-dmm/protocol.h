@@ -705,7 +705,10 @@ struct appadmm_display_data_s {
 	enum appadmm_dot_e dot; /**< Dot position */
 	enum appadmm_unit_e unit; /**< Unit of reading */
 
-	enum appadmm_data_content_e data_content; /**< Specification of data content */
+	union {
+		enum appadmm_data_content_e data_content; /**< Specification of data content */
+		enum appadmm_functioncode_e log_function_code; /**< Function Code */
+	};
 	enum appadmm_overload_e overload; /**< O.L or not */
 };
 

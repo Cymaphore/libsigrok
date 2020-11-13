@@ -259,6 +259,7 @@ static int appadmm_acquisition_start(const struct sr_dev_inst *sdi)
 {
 	struct appadmm_context *devc;
 	struct sr_serial_dev_inst *serial;
+	enum appadmm_storage_e storage;
 
 	int retr;
 
@@ -280,9 +281,20 @@ static int appadmm_acquisition_start(const struct sr_dev_inst *sdi)
 		if((retr = appadmm_storage_info(sdi, devc->storage_info)) < SR_OK)
 			return retr;
 
+		switch (devc->data_source) {
+		case APPADMM_DATA_SOURCE_MEM:
+			storage = APPADMM_STORAGE_MEM;
+			break;
+		case APPADMM_DATA_SOURCE_LOG:
+			storage = APPADMM_STORAGE_LOG;
+			break;
+		default:
+			return SR_ERR_BUG;
+		}
+		
 		if (devc->limits.limit_samples < 1
-			|| devc->limits.limit_samples > (uint64_t)devc->storage_info[APPADMM_STORAGE_LOG].amount * 2)
-			devc->limits.limit_samples = devc->storage_info[APPADMM_STORAGE_LOG].amount * 2;
+			|| devc->limits.limit_samples > (uint64_t)devc->storage_info[storage].amount * 2)
+			devc->limits.limit_samples = devc->storage_info[storage].amount * 2;
 		
 		sr_sw_limits_acquisition_start(&devc->limits);
 		if ((retr = std_session_send_df_header(sdi)) < SR_OK)

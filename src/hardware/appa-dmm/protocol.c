@@ -116,7 +116,8 @@ SR_PRIV int appadmm_identify(const struct sr_dev_inst *arg_sdi)
  */
 static int appadmm_transform_display_data(const struct sr_dev_inst *arg_sdi,
 	enum appadmm_channel_e arg_channel,
-	const struct appadmm_response_data_read_display_s *arg_data)
+	const struct appadmm_display_data_s *arg_display_data,
+	const struct appadmm_response_data_read_display_s *arg_read_data)
 {
 	struct sr_datafeed_packet packet;
 
@@ -130,14 +131,14 @@ static int appadmm_transform_display_data(const struct sr_dev_inst *arg_sdi,
 	int retr;
 
 	struct appadmm_context *devc;
-	const struct appadmm_display_data_s *display_data;
 	gboolean is_dash;
 	double unit_factor;
 	double display_reading_value;
 	int8_t digits;
+	enum appadmm_functioncode_e function_code;
 
 	if (arg_sdi == NULL
-		|| arg_data == NULL)
+		|| arg_display_data == NULL)
 		return SR_ERR_ARG;
 
 	devc = arg_sdi->priv;
@@ -146,6 +147,11 @@ static int appadmm_transform_display_data(const struct sr_dev_inst *arg_sdi,
 
 	if (retr < SR_OK)
 		return retr;
+	
+	if (arg_read_data == NULL)
+		function_code = arg_display_data->log_function_code;
+	else
+		function_code = arg_read_data->function_code;
 
 	switch (arg_channel) {
 
@@ -156,22 +162,17 @@ static int appadmm_transform_display_data(const struct sr_dev_inst *arg_sdi,
 	case APPADMM_CHANNEL_DISPLAY_PRIMARY:
 	case APPADMM_CHANNEL_DISPLAY_SECONDARY:
 
-		if (arg_channel == APPADMM_CHANNEL_DISPLAY_PRIMARY)
-			display_data = &arg_data->main_display_data;
-		else
-			display_data = &arg_data->sub_display_data;
-
 		unit_factor = 1;
 		digits = 0;
 
-		display_reading_value = (float) display_data->reading;
+		display_reading_value = (float) arg_display_data->reading;
 
-		is_dash = appadmm_is_wordcode_dash(display_data->reading);
+		is_dash = appadmm_is_wordcode_dash(arg_display_data->reading);
 
-		if (!appadmm_is_wordcode(display_data->reading)
+		if (!appadmm_is_wordcode(arg_display_data->reading)
 			|| is_dash) {
 
-			switch (display_data->dot) {
+			switch (arg_display_data->dot) {
 
 			default:
 			case APPADMM_DOT_NONE:
@@ -201,7 +202,7 @@ static int appadmm_transform_display_data(const struct sr_dev_inst *arg_sdi,
 
 			}
 
-			switch (display_data->data_content) {
+			switch (arg_display_data->data_content) {
 
 			case APPADMM_DATA_CONTENT_MAXIMUM:
 				analog.meaning->mqflags |= SR_MQFLAG_MAX;
@@ -272,10 +273,11 @@ static int appadmm_transform_display_data(const struct sr_dev_inst *arg_sdi,
 
 			}
 
-			if (arg_data->auto_range == APPADMM_AUTO_RANGE)
+			if (arg_read_data != NULL
+				&& arg_read_data->auto_range == APPADMM_AUTO_RANGE)
 				analog.meaning->mqflags |= SR_MQFLAG_AUTORANGE;
 
-			switch (display_data->unit) {
+			switch (arg_display_data->unit) {
 
 			default: case APPADMM_UNIT_NONE:
 				analog.meaning->unit = SR_UNIT_UNITLESS;
@@ -448,7 +450,7 @@ static int appadmm_transform_display_data(const struct sr_dev_inst *arg_sdi,
 
 			}
 
-			switch (arg_data->function_code) {
+			switch (function_code) {
 
 			case APPADMM_FUNCTIONCODE_PEAK_HOLD_UA:
 			case APPADMM_FUNCTIONCODE_AC_UA:
@@ -561,7 +563,7 @@ static int appadmm_transform_display_data(const struct sr_dev_inst *arg_sdi,
 
 			display_reading_value *= unit_factor;
 
-			if (display_data->overload == APPADMM_OVERLOAD
+			if (arg_display_data->overload == APPADMM_OVERLOAD
 				|| is_dash)
 				val = INFINITY;
 			else
@@ -572,7 +574,7 @@ static int appadmm_transform_display_data(const struct sr_dev_inst *arg_sdi,
 
 			val = INFINITY;
 
-			switch (display_data->reading) {
+			switch (arg_display_data->reading) {
 
 			case APPADMM_WORDCODE_BATT:
 			case APPADMM_WORDCODE_HAZ:
@@ -584,7 +586,7 @@ static int appadmm_transform_display_data(const struct sr_dev_inst *arg_sdi,
 			case APPADMM_WORDCODE_ER3:
 				sr_err("ERROR [%s]: %s",
 					appadmm_channel_name(arg_channel),
-					appadmm_wordcode_name(display_data->reading));
+					appadmm_wordcode_name(arg_display_data->reading));
 				break;
 
 			case APPADMM_WORDCODE_SPACE:
@@ -597,25 +599,25 @@ static int appadmm_transform_display_data(const struct sr_dev_inst *arg_sdi,
 			default:
 				sr_warn("MESSAGE [%s]: %s",
 					appadmm_channel_name(arg_channel),
-					appadmm_wordcode_name(display_data->reading));
+					appadmm_wordcode_name(arg_display_data->reading));
 				break;
 
 			case APPADMM_WORDCODE_DEF:
 				/* Not beautiful, but functional */
-				if (display_data->unit == APPADMM_UNIT_DEGC)
+				if (arg_display_data->unit == APPADMM_UNIT_DEGC)
 					sr_warn("MESSAGE [%s]: %s °C",
 					appadmm_channel_name(arg_channel),
-					appadmm_wordcode_name(display_data->reading));
+					appadmm_wordcode_name(arg_display_data->reading));
 
-				else if (display_data->unit == APPADMM_UNIT_DEGF)
+				else if (arg_display_data->unit == APPADMM_UNIT_DEGF)
 					sr_warn("MESSAGE [%s]: %s °F",
 					appadmm_channel_name(arg_channel),
-					appadmm_wordcode_name(display_data->reading));
+					appadmm_wordcode_name(arg_display_data->reading));
 
 				else
 					sr_warn("MESSAGE [%s]: %s",
 					appadmm_channel_name(arg_channel),
-					appadmm_wordcode_name(display_data->reading));
+					appadmm_wordcode_name(arg_display_data->reading));
 				break;
 
 			}
@@ -667,29 +669,77 @@ static int appadmm_process_read_display(const struct sr_dev_inst *arg_sdi,
 	devc = arg_sdi->priv;
 	retr = SR_OK;
 
-	/* Main reading */
+	/* Primary reading */
 	channel = g_slist_nth_data(arg_sdi->channels, APPADMM_CHANNEL_DISPLAY_PRIMARY);
 	if (channel != NULL 
 		&& channel->enabled) {
 		if (appadmm_cap_channel(devc->model_id, APPADMM_CHANNEL_DISPLAY_PRIMARY))
 			retr = appadmm_transform_display_data(arg_sdi,
-			APPADMM_CHANNEL_DISPLAY_PRIMARY, arg_data);
+			APPADMM_CHANNEL_DISPLAY_PRIMARY, &arg_data->main_display_data, arg_data);
 		if (retr < SR_OK)
 			return retr;
 	}
 
-	/* Sub reading */
+	/* Secondary reading */
 	channel = g_slist_nth_data(arg_sdi->channels, APPADMM_CHANNEL_DISPLAY_SECONDARY);
 	if (channel != NULL
 		&& channel->enabled) {
 		if (appadmm_cap_channel(devc->model_id, APPADMM_CHANNEL_DISPLAY_SECONDARY))
 			retr = appadmm_transform_display_data(arg_sdi,
-			APPADMM_CHANNEL_DISPLAY_SECONDARY, arg_data);
+			APPADMM_CHANNEL_DISPLAY_SECONDARY, &arg_data->main_display_data, arg_data);
 		if (retr < SR_OK)
 			return retr;
 	}
 
 	return retr;
+}
+
+static int appadmm_transform_sample_id(const struct sr_dev_inst *arg_sdi,
+	enum appadmm_channel_e arg_channel)
+{
+	struct sr_datafeed_packet packet;
+
+	struct sr_datafeed_analog analog;
+	struct sr_analog_encoding encoding;
+	struct sr_analog_meaning meaning;
+	struct sr_analog_spec spec;
+	struct sr_channel *channel;
+	float val;
+
+	int retr;
+
+	struct appadmm_context *devc;
+
+	if (arg_sdi == NULL)
+		return SR_ERR_ARG;
+
+	devc = arg_sdi->priv;
+	retr = sr_analog_init(&analog, &encoding, &meaning, &spec, 0);
+	val = 0;
+
+	if (retr < SR_OK)
+		return retr;
+
+	val = (devc->limits.samples_read / 2 + 1);
+	analog.encoding->digits = 0;
+	analog.spec->spec_digits = 0;
+	analog.meaning->mq = SR_MQ_COUNT;
+	analog.meaning->unit = SR_UNIT_UNITLESS;
+
+	if (analog.meaning->mq != 0) {
+		channel = g_slist_nth_data(arg_sdi->channels, arg_channel);
+		analog.meaning->channels = g_slist_append(NULL, channel);
+		analog.num_samples = 1;
+		packet.type = SR_DF_ANALOG;
+		packet.payload = &analog;
+		analog.data = &val;
+		analog.encoding->unitsize = sizeof(val);
+		retr = sr_session_send(arg_sdi, &packet);
+		sr_sw_limits_update_samples_read(&devc->limits, 1);
+	}
+
+	return retr;
+
 }
 
 SR_PRIV int appadmm_storage_info(const struct sr_dev_inst *arg_sdi,
@@ -720,6 +770,72 @@ SR_PRIV int appadmm_storage_info(const struct sr_dev_inst *arg_sdi,
 	if((retr = appadmm_dec_storage_info(&response, arg_storage_info)) < SR_OK)
 		return retr;
 
+	return retr;
+}
+
+
+static int appadmm_process_storage(const struct sr_dev_inst *arg_sdi,
+	const struct appadmm_response_data_read_memory_s *arg_data)
+{
+	struct appadmm_context *devc;
+	struct sr_channel *channel;
+	struct appadmm_display_data_s display_data[13]; 
+	enum appadmm_storage_e storage;
+
+	int retr;
+	int xloop;
+
+	if (arg_sdi == NULL
+		|| arg_data == NULL)
+		return SR_ERR_ARG;
+
+	devc = arg_sdi->priv;
+	retr = SR_OK;
+	
+	switch (devc->data_source) {
+	case APPADMM_DATA_SOURCE_MEM:
+		storage = APPADMM_STORAGE_MEM;
+		break;
+	case APPADMM_DATA_SOURCE_LOG:
+		storage = APPADMM_STORAGE_LOG;
+		break;
+	default:
+		return SR_ERR_BUG;
+	}
+	
+	if ((retr = appadmm_dec_read_storage(arg_data, &devc->storage_info[storage], display_data))
+		< SR_OK)
+		return retr;
+
+	for (xloop = 0; xloop < arg_data->data_length / 5; xloop++) {
+		/* Primary */
+		channel = g_slist_nth_data(arg_sdi->channels, APPADMM_CHANNEL_DISPLAY_PRIMARY);
+		if (channel != NULL 
+			&& channel->enabled) {
+			if (appadmm_cap_channel(devc->model_id, APPADMM_CHANNEL_DISPLAY_PRIMARY))
+				retr = appadmm_transform_display_data(arg_sdi,
+				APPADMM_CHANNEL_DISPLAY_PRIMARY, &display_data[xloop], NULL);
+			if (retr < SR_OK)
+				return retr;
+		}
+
+		/* Secondary (Reading number in Storage) */
+		channel = g_slist_nth_data(arg_sdi->channels, APPADMM_CHANNEL_DISPLAY_SECONDARY);
+		if (channel != NULL
+			&& channel->enabled) {
+			if (appadmm_cap_channel(devc->model_id, APPADMM_CHANNEL_DISPLAY_SECONDARY))
+				retr = appadmm_transform_sample_id(arg_sdi,
+				APPADMM_CHANNEL_DISPLAY_SECONDARY);
+			if (retr < SR_OK)
+				return retr;
+		}
+		
+		/* check for limits or stop request */
+		if (sr_sw_limits_check(&devc->limits)) {
+			return SR_OK;
+		}
+
+	}
 	return retr;
 }
 
@@ -785,8 +901,9 @@ SR_PRIV int appadmm_serial_receive_storage(int arg_fd, int arg_revents,
 {
 	struct sr_dev_inst *sdi;
 	struct appadmm_context *devc;
-	struct appadmm_request_data_read_display_s request;
-	struct appadmm_response_data_read_display_s response;
+	struct appadmm_request_data_read_memory_s request;
+	struct appadmm_response_data_read_memory_s response;
+	enum appadmm_storage_e storage;
 	
 	gboolean abort;
 	int retr;
@@ -799,15 +916,26 @@ SR_PRIV int appadmm_serial_receive_storage(int arg_fd, int arg_revents,
 		return FALSE;
 	if (!(devc = sdi->priv))
 		return FALSE;
+	
+	switch (devc->data_source) {
+	case APPADMM_DATA_SOURCE_MEM:
+		storage = APPADMM_STORAGE_MEM;
+		break;
+	case APPADMM_DATA_SOURCE_LOG:
+		storage = APPADMM_STORAGE_LOG;
+		break;
+	default:
+		return SR_ERR_BUG;
+	}
 
 	/* Try to receive and process incoming data */
 	if (arg_revents == G_IO_IN) {
-		if ((retr = appadmm_response_read_display(&devc->appa_inst,
+		if ((retr = appadmm_response_read_memory(&devc->appa_inst,
 			&response)) < SR_OK) {
 			sr_warn("Aborted in appadmm_receive, result %d", retr);
 			abort = TRUE;
 		} else if(retr > FALSE) {
-			if (appadmm_process_read_display(sdi, &response)
+			if (appadmm_process_storage(sdi, &response)
 				< SR_OK) {
 				abort = TRUE;
 			}
@@ -817,7 +945,9 @@ SR_PRIV int appadmm_serial_receive_storage(int arg_fd, int arg_revents,
 
 	/* if no request is pending, send out a new one */
 	if (!devc->request_pending) {
-		if (appadmm_request_read_display(&devc->appa_inst, &request)
+		appadmm_enc_read_storage(&request, &devc->storage_info[storage],
+			devc->limits.samples_read / 2, 0xff);
+		if (appadmm_request_read_memory(&devc->appa_inst, &request)
 			< TRUE) {
 			sr_warn("Aborted in appadmm_send");
 			abort = TRUE;
