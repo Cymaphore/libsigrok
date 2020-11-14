@@ -932,11 +932,19 @@ SR_PRIV int appadmm_serial_receive_storage(int arg_fd, int arg_revents,
 	if (arg_revents == G_IO_IN) {
 		if ((retr = appadmm_response_read_memory(&devc->appa_inst,
 			&response)) < SR_OK) {
-			sr_warn("Aborted in appadmm_receive, result %d", retr);
-			abort = TRUE;
+			if (devc->error_counter++ > 10) {
+				sr_warn("Aborted in appadmm_response_read_memory, result %d", retr);
+				abort = TRUE;
+			} else {
+				devc->request_pending = FALSE;
+			}
 		} else if(retr > FALSE) {
+			if (devc->error_counter > 0)
+				devc->error_counter--;
 			if (appadmm_process_storage(sdi, &response)
 				< SR_OK) {
+				sr_warn("Aborted in appadmm_process_storage, result %d",
+					retr);
 				abort = TRUE;
 			}
 			devc->request_pending = FALSE;
@@ -944,12 +952,15 @@ SR_PRIV int appadmm_serial_receive_storage(int arg_fd, int arg_revents,
 	}
 
 	/* if no request is pending, send out a new one */
-	if (!devc->request_pending) {
-		appadmm_enc_read_storage(&request, &devc->storage_info[storage],
-			devc->limits.samples_read / 2, 0xff);
-		if (appadmm_request_read_memory(&devc->appa_inst, &request)
-			< TRUE) {
-			sr_warn("Aborted in appadmm_send");
+	if (!devc->request_pending && !abort) {
+		if ((retr = appadmm_enc_read_storage(&request,
+			&devc->storage_info[storage],
+			devc->limits.samples_read / 2, 0xff)) < SR_OK) {
+			sr_warn("Aborted in appadmm_enc_read_storage");
+			abort = TRUE;
+		} else if ((retr = appadmm_request_read_memory(&devc->appa_inst,
+			&request)) < TRUE) {
+			sr_warn("Aborted in appadmm_request_read_memory");
 			abort = TRUE;
 		} else {
 			devc->request_pending = TRUE;
@@ -1050,6 +1061,8 @@ SR_PRIV int appadmm_clear_context(struct appadmm_context *arg_devc)
 	appadmm_clear_storage_info(arg_devc->storage_info);
 
 	arg_devc->request_pending = FALSE;
+	
+	arg_devc->error_counter = 0;
 	
 	return SR_OK;
 };

@@ -839,6 +839,7 @@ struct appadmm_context {
 	struct appadmm_storage_info_s storage_info[APPADMM_STORAGE_INFO_COUNT]; /**< LOG and MEM info */
 
 	struct sr_sw_limits limits; /**< Limits for data acquisition */
+	int error_counter; /**< retry on ble issues */
 };
 
 /* ***************************************** */

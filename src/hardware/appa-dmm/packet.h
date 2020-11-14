@@ -579,13 +579,15 @@ static int appadmm_enc_read_storage(struct appadmm_request_data_read_memory_s *a
 		arg_storage_info->mem_count * arg_storage_info->entry_count)
 		return SR_ERR_ARG;
 	
-	/*sr_err("**** get log input: %d, %d",
-		arg_start_entry, arg_entry_count);*/
+	/*
+	sr_err("**** get log input: %d, %d",
+		arg_start_entry, arg_entry_count);
+	*/
 	
 	address_position = (arg_start_entry % arg_storage_info->entry_count);
 	
-	if(arg_entry_count > SR_TP_APPA_MAX_DATA_SIZE / arg_storage_info->entry_size)
-		arg_entry_count = SR_TP_APPA_MAX_DATA_SIZE / arg_storage_info->entry_size;
+	if(arg_entry_count > (SR_TP_APPA_MAX_DATA_SIZE / arg_storage_info->entry_size))
+		arg_entry_count = (SR_TP_APPA_MAX_DATA_SIZE / arg_storage_info->entry_size);
 	
 	if(address_position + arg_entry_count > arg_storage_info->entry_count)
 		arg_entry_count = arg_storage_info->entry_count - address_position;
@@ -602,10 +604,15 @@ static int appadmm_enc_read_storage(struct appadmm_request_data_read_memory_s *a
 	if (arg_read_memory->device_number > arg_storage_info->mem_count)
 		return SR_ERR_BUG;
 
-	/*sr_err("**** get log output: %d, %d, %d",
+	/* I don't want to know why I need to do this to avoid data to become garbage */
+	arg_read_memory->data_length = 64;
+	
+	/*
+	sr_err("**** get log output: %d, %d, %d",
 		arg_read_memory->device_number,
 		arg_read_memory->memory_address,
-		arg_read_memory->data_length);*/
+		arg_read_memory->data_length);
+	*/
 	
 	return SR_OK;
 }

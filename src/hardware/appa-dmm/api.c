@@ -292,8 +292,11 @@ static int appadmm_acquisition_start(const struct sr_dev_inst *sdi)
 			return SR_ERR_BUG;
 		}
 		
+		devc->limits.limit_samples *= 2;
+		devc->error_counter = 0;
+		
 		if (devc->limits.limit_samples < 1
-			|| devc->limits.limit_samples > (uint64_t)devc->storage_info[storage].amount * 2)
+			|| devc->limits.limit_samples > (uint64_t)devc->storage_info[storage].amount)
 			devc->limits.limit_samples = devc->storage_info[storage].amount * 2;
 		
 		sr_sw_limits_acquisition_start(&devc->limits);
