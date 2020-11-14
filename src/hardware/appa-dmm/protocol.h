@@ -205,6 +205,11 @@ enum appadmm_model_id_e {
 	 * Invalid
 	 */
 	APPADMM_MODEL_ID_INVALID = 0x00,
+	
+	/**
+	 * Invalid
+	 */
+	APPADMM_MODEL_ID_OVERFLOW = 0xff,
 
 	/**
 	 * APPA 150 Series

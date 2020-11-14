@@ -413,6 +413,7 @@ static void dump_saved_values(struct context *ctx, GString **out)
 	float *analog_sample, value;
 	uint8_t *logic_sample;
 
+
 	/* If we haven't seen samples we're expecting, skip them. */
 	if ((ctx->num_analog_channels && !ctx->analog_samples) ||
 	    (ctx->num_logic_channels && !ctx->logic_samples)) {
@@ -474,7 +475,13 @@ static void dump_saved_values(struct context *ctx, GString **out)
 			}
 
 			if (ctx->time && !ctx->sample_rate) {
-				g_string_append_printf(*out, "0%s", ctx->value);
+				/* Provide current time to allow proper
+				 * recording of live readings */
+				sample_time_dbl = g_get_real_time();
+				sample_time_dbl /= 1000000;
+				sample_time_u64 = sample_time_dbl;
+				g_string_append_printf(*out, "%f%s",
+					sample_time_dbl, ctx->value);
 			} else if (ctx->time) {
 				sample_time_dbl = ctx->out_sample_count++;
 				sample_time_dbl /= ctx->sample_rate;

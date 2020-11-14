@@ -123,14 +123,16 @@ static GSList *appadmm_scan(struct sr_dev_driver *di, GSList *options)
 	appadmm_identify(sdi);
 
 	/* If received model is invalid or nothing received, abort */
-	if (devc->model_id == APPADMM_MODEL_ID_INVALID) {
-		sr_err("APPA-Device NOT FOUND; No valid response to read_information request.");
+	if (devc->model_id == APPADMM_MODEL_ID_INVALID
+		|| devc->model_id < APPADMM_MODEL_ID_INVALID
+		|| devc->model_id > APPADMM_MODEL_ID_OVERFLOW) {
+		sr_err("APPA-Device NOT FOUND or INVALID; No valid response to read_information request.");
 		sr_serial_dev_inst_free(serial);
 		serial_close(serial);
 		return NULL;
 	}
 
-	sr_err("APPA-Device DETECTED; Vendor: %s, Model: %s, OEM-Model: %s, Version: %s, Serial number: %s, Model ID: %i",
+	sr_info("APPA-Device DETECTED; Vendor: %s, Model: %s, OEM-Model: %s, Version: %s, Serial number: %s, Model ID: %i",
 		sdi->vendor,
 		sdi->model,
 		appadmm_model_id_name(devc->model_id),
@@ -303,6 +305,10 @@ static int appadmm_acquisition_start(const struct sr_dev_inst *sdi)
 		if ((retr = std_session_send_df_header(sdi)) < SR_OK)
 			return retr;
 
+		if(devc->storage_info[storage].rate > 0) {
+			sr_session_send_meta(sdi, SR_CONF_SAMPLE_INTERVAL, g_variant_new_int64(devc->storage_info[storage].rate * 1000));
+		}
+		
 		retr = serial_source_add(sdi->session, serial, G_IO_IN, 10,
 			appadmm_serial_receive_storage, (void *) sdi);
 		break;

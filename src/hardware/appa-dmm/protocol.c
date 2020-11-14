@@ -629,7 +629,8 @@ static int appadmm_transform_display_data(const struct sr_dev_inst *arg_sdi,
 
 	if (analog.meaning->mq == 0) {
 		val = INFINITY;
-		analog.meaning->mq = 0;
+		analog.meaning->unit = SR_UNIT_UNITLESS;
+		analog.meaning->mq = SR_MQ_COUNT;
 		analog.meaning->mqflags = 0;
 		analog.encoding->digits = 0;
 		analog.spec->spec_digits = 0;
@@ -643,7 +644,6 @@ static int appadmm_transform_display_data(const struct sr_dev_inst *arg_sdi,
 	analog.encoding->unitsize = sizeof(val);
 	retr = sr_session_send(arg_sdi, &packet);
 	sr_sw_limits_update_samples_read(&devc->limits, 1);
-
 	return retr;
 
 }
