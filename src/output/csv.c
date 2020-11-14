@@ -285,7 +285,7 @@ static GString *gen_header(const struct sr_output *o,
 
 	/* Time column requested but samplerate unknown. Emit a warning. */
 	if (ctx->time && !ctx->sample_rate)
-		sr_warn("Samplerate unknown, cannot provide timestamps.");
+		sr_warn("Samplerate unknown, will use epoch timestamp.");
 
 	return header;
 }
