@@ -696,7 +696,6 @@ static int receive(const struct sr_output *o,
 		break;
 	case SR_DF_FRAME_BEGIN:
 		ctx->have_frames = TRUE;
-		*out = g_string_new(ctx->frame);
 		/* Fallthrough */
 	case SR_DF_END:
 		/* Got to end of frame/session with part of the data. */

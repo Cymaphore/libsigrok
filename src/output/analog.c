@@ -29,6 +29,9 @@
 
 #define BIN_TO_DEC_DIGITS (log(2) / log(10))
 
+/* Uncomment to get frame output */
+/* #define ANALOG_FRAME_DEBUG */
+
 struct context {
 	int num_enabled_channels;
 	GPtrArray *channellist;
@@ -94,10 +97,14 @@ static int receive(const struct sr_output *o, const struct sr_datafeed_packet *p
 
 	switch (packet->type) {
 	case SR_DF_FRAME_BEGIN:
+#ifdef ANALOG_FRAME_DEBUG
 		*out = g_string_new("FRAME-BEGIN\n");
+#endif/*ANALOG_FRAME_DEBUG*/
 		break;
 	case SR_DF_FRAME_END:
+#ifdef ANALOG_FRAME_DEBUG
 		*out = g_string_new("FRAME-END\n");
+#endif/*ANALOG_FRAME_DEBUG*/
 		break;
 	case SR_DF_META:
 		meta = packet->payload;

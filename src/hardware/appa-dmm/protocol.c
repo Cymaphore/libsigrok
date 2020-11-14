@@ -110,7 +110,7 @@ SR_PRIV int appadmm_identify(const struct sr_dev_inst *arg_sdi)
  * argument.
  *
  * @param arg_sdi Device Instance
- * @param arg_channel Current channel (main, sub, ...)
+ * @param arg_channel Current channel (primary, secondary, ...)
  * @param arg_data Data received with frame
  * @return SR_OK if successfull, otherwise SR_ERR_...
  */
@@ -627,17 +627,22 @@ static int appadmm_transform_display_data(const struct sr_dev_inst *arg_sdi,
 		break;
 	}
 
-	if (analog.meaning->mq != 0) {
-		channel = g_slist_nth_data(arg_sdi->channels, arg_channel);
-		analog.meaning->channels = g_slist_append(NULL, channel);
-		analog.num_samples = 1;
-		packet.type = SR_DF_ANALOG;
-		packet.payload = &analog;
-		analog.data = &val;
-		analog.encoding->unitsize = sizeof(val);
-		retr = sr_session_send(arg_sdi, &packet);
-		sr_sw_limits_update_samples_read(&devc->limits, 1);
+	if (analog.meaning->mq == 0) {
+		val = INFINITY;
+		analog.meaning->mq = 0;
+		analog.meaning->mqflags = 0;
+		analog.encoding->digits = 0;
+		analog.spec->spec_digits = 0;
 	}
+	channel = g_slist_nth_data(arg_sdi->channels, arg_channel);
+	analog.meaning->channels = g_slist_append(NULL, channel);
+	analog.num_samples = 1;
+	packet.type = SR_DF_ANALOG;
+	packet.payload = &analog;
+	analog.data = &val;
+	analog.encoding->unitsize = sizeof(val);
+	retr = sr_session_send(arg_sdi, &packet);
+	sr_sw_limits_update_samples_read(&devc->limits, 1);
 
 	return retr;
 
@@ -658,7 +663,7 @@ static int appadmm_process_read_display(const struct sr_dev_inst *arg_sdi,
 	const struct appadmm_response_data_read_display_s *arg_data)
 {
 	struct appadmm_context *devc;
-	struct sr_channel *channel;
+	struct sr_datafeed_packet packet;
 
 	int retr;
 
@@ -669,27 +674,25 @@ static int appadmm_process_read_display(const struct sr_dev_inst *arg_sdi,
 	devc = arg_sdi->priv;
 	retr = SR_OK;
 
+	packet.type = SR_DF_FRAME_BEGIN;
+	sr_session_send(arg_sdi, &packet);
+	
 	/* Primary reading */
-	channel = g_slist_nth_data(arg_sdi->channels, APPADMM_CHANNEL_DISPLAY_PRIMARY);
-	if (channel != NULL 
-		&& channel->enabled) {
-		if (appadmm_cap_channel(devc->model_id, APPADMM_CHANNEL_DISPLAY_PRIMARY))
-			retr = appadmm_transform_display_data(arg_sdi,
-			APPADMM_CHANNEL_DISPLAY_PRIMARY, &arg_data->main_display_data, arg_data);
-		if (retr < SR_OK)
-			return retr;
-	}
+	if (appadmm_cap_channel(devc->model_id, APPADMM_CHANNEL_DISPLAY_PRIMARY))
+		retr = appadmm_transform_display_data(arg_sdi,
+		APPADMM_CHANNEL_DISPLAY_PRIMARY, &arg_data->primary_display_data, arg_data);
+	if (retr < SR_OK)
+		return retr;
 
 	/* Secondary reading */
-	channel = g_slist_nth_data(arg_sdi->channels, APPADMM_CHANNEL_DISPLAY_SECONDARY);
-	if (channel != NULL
-		&& channel->enabled) {
-		if (appadmm_cap_channel(devc->model_id, APPADMM_CHANNEL_DISPLAY_SECONDARY))
-			retr = appadmm_transform_display_data(arg_sdi,
-			APPADMM_CHANNEL_DISPLAY_SECONDARY, &arg_data->main_display_data, arg_data);
-		if (retr < SR_OK)
-			return retr;
-	}
+	if (appadmm_cap_channel(devc->model_id, APPADMM_CHANNEL_DISPLAY_SECONDARY))
+		retr = appadmm_transform_display_data(arg_sdi,
+		APPADMM_CHANNEL_DISPLAY_SECONDARY, &arg_data->secondary_display_data, arg_data);
+	if (retr < SR_OK)
+		return retr;
+
+	packet.type = SR_DF_FRAME_END;
+	sr_session_send(arg_sdi, &packet);
 
 	return retr;
 }
@@ -778,8 +781,8 @@ static int appadmm_process_storage(const struct sr_dev_inst *arg_sdi,
 	const struct appadmm_response_data_read_memory_s *arg_data)
 {
 	struct appadmm_context *devc;
-	struct sr_channel *channel;
 	struct appadmm_display_data_s display_data[13]; 
+	struct sr_datafeed_packet packet;
 	enum appadmm_storage_e storage;
 
 	int retr;
@@ -808,27 +811,26 @@ static int appadmm_process_storage(const struct sr_dev_inst *arg_sdi,
 		return retr;
 
 	for (xloop = 0; xloop < arg_data->data_length / 5; xloop++) {
+		
+		packet.type = SR_DF_FRAME_BEGIN;
+		sr_session_send(arg_sdi, &packet);
+		
 		/* Primary */
-		channel = g_slist_nth_data(arg_sdi->channels, APPADMM_CHANNEL_DISPLAY_PRIMARY);
-		if (channel != NULL 
-			&& channel->enabled) {
-			if (appadmm_cap_channel(devc->model_id, APPADMM_CHANNEL_DISPLAY_PRIMARY))
-				retr = appadmm_transform_display_data(arg_sdi,
-				APPADMM_CHANNEL_DISPLAY_PRIMARY, &display_data[xloop], NULL);
-			if (retr < SR_OK)
-				return retr;
-		}
+		if (appadmm_cap_channel(devc->model_id, APPADMM_CHANNEL_DISPLAY_PRIMARY))
+			retr = appadmm_transform_display_data(arg_sdi,
+			APPADMM_CHANNEL_DISPLAY_PRIMARY, &display_data[xloop], NULL);
+		if (retr < SR_OK)
+			return retr;
 
 		/* Secondary (Reading number in Storage) */
-		channel = g_slist_nth_data(arg_sdi->channels, APPADMM_CHANNEL_DISPLAY_SECONDARY);
-		if (channel != NULL
-			&& channel->enabled) {
-			if (appadmm_cap_channel(devc->model_id, APPADMM_CHANNEL_DISPLAY_SECONDARY))
-				retr = appadmm_transform_sample_id(arg_sdi,
-				APPADMM_CHANNEL_DISPLAY_SECONDARY);
-			if (retr < SR_OK)
-				return retr;
-		}
+		if (appadmm_cap_channel(devc->model_id, APPADMM_CHANNEL_DISPLAY_SECONDARY))
+			retr = appadmm_transform_sample_id(arg_sdi,
+			APPADMM_CHANNEL_DISPLAY_SECONDARY);
+		if (retr < SR_OK)
+			return retr;
+		
+		packet.type = SR_DF_FRAME_END;
+		sr_session_send(arg_sdi, &packet);
 		
 		/* check for limits or stop request */
 		if (sr_sw_limits_check(&devc->limits)) {

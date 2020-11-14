@@ -331,25 +331,25 @@ static int appadmm_dec_read_display(const struct sr_tp_appa_packet *arg_packet,
 	arg_read_display->range_code = u8 & 0x7f;
 	arg_read_display->auto_range = u8 >> 7;
 
-	arg_read_display->main_display_data.reading = read_i24le_inc(&rdptr);
+	arg_read_display->primary_display_data.reading = read_i24le_inc(&rdptr);
 
 	u8 = read_u8_inc(&rdptr);
-	arg_read_display->main_display_data.dot = u8 & 0x7;
-	arg_read_display->main_display_data.unit = u8 >> 3;
+	arg_read_display->primary_display_data.dot = u8 & 0x7;
+	arg_read_display->primary_display_data.unit = u8 >> 3;
 
 	u8 = read_u8_inc(&rdptr);
-	arg_read_display->main_display_data.data_content = u8 & 0x7f;
-	arg_read_display->main_display_data.overload = u8 >> 7;
+	arg_read_display->primary_display_data.data_content = u8 & 0x7f;
+	arg_read_display->primary_display_data.overload = u8 >> 7;
 
-	arg_read_display->sub_display_data.reading = read_i24le_inc(&rdptr);
-
-	u8 = read_u8_inc(&rdptr);
-	arg_read_display->sub_display_data.dot = u8 & 0x7;
-	arg_read_display->sub_display_data.unit = u8 >> 3;
+	arg_read_display->secondary_display_data.reading = read_i24le_inc(&rdptr);
 
 	u8 = read_u8_inc(&rdptr);
-	arg_read_display->sub_display_data.data_content = u8 & 0x7f;
-	arg_read_display->sub_display_data.overload = u8 >> 7;
+	arg_read_display->secondary_display_data.dot = u8 & 0x7;
+	arg_read_display->secondary_display_data.unit = u8 >> 3;
+
+	u8 = read_u8_inc(&rdptr);
+	arg_read_display->secondary_display_data.data_content = u8 & 0x7f;
+	arg_read_display->secondary_display_data.overload = u8 >> 7;
 
 	return SR_OK;
 }

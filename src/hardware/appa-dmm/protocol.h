@@ -758,9 +758,9 @@ struct appadmm_response_data_read_display_s {
 	uint8_t range_code; /**< Range code, depending on function_code and unit */
 	enum appadmm_autorange_e auto_range; /**< Automatic or manual range */
 
-	struct appadmm_display_data_s main_display_data; /**< Reading of main (lower) display value */
+	struct appadmm_display_data_s primary_display_data; /**< Reading of main (lower) display value */
 
-	struct appadmm_display_data_s sub_display_data; /**< Reading of sub (upper) display value */
+	struct appadmm_display_data_s secondary_display_data; /**< Reading of sub (upper) display value */
 };
 
 /**
