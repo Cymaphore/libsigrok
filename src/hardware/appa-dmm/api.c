@@ -303,6 +303,8 @@ static int appadmm_acquisition_start(const struct sr_dev_inst *sdi)
 	devc = sdi->priv;
 	serial = sdi->conn;
 
+	retr = SR_OK;
+
 	switch (devc->data_source) {
 	case APPADMM_DATA_SOURCE_LIVE:
 		/* Configure limits */
