@@ -21,14 +21,7 @@
  * @file
  * @version 1
  *
- * APPA B Interface
- *
- * Based on APPA Communication Protocol v2.8
- *
- * Driver for modern APPA meters (handheld, bench, clamp). Communication is
- * done over a serial interface using the known APPA-Frames, see below. The
- * base protocol is always the same and deviates only where the models have
- * differences in ablities, range and features.
+ * APPA DMM Packet conversion functions
  *
  */
 
@@ -487,13 +480,13 @@ static int appadmm_dec_read_memory(const struct sr_tp_appa_packet *arg_packet,
 
 	rdptr = &arg_packet->data[0];
 
-	if(arg_packet->length > sizeof(arg_read_memory->data))
+	if (arg_packet->length > sizeof(arg_read_memory->data))
 		return SR_ERR_DATA;
 
 	/* redundent, for future compatibility with older models */
 	arg_read_memory->data_length = arg_packet->length;
 
-	for(xloop = 0; xloop < arg_packet->length; xloop++)
+	for (xloop = 0; xloop < arg_packet->length; xloop++)
 		arg_read_memory->data[xloop] = read_u8_inc(&rdptr);
 
 	return SR_OK;
@@ -581,7 +574,7 @@ static int appadmm_request_read_memory(struct sr_tp_appa_inst *arg_tpai,
  * @retval TRUE if packet was received and arg_response is valid
  * @retval FALSE if no data was available
  * @ratval SR_ERR on error
-*/
+ */
 static int appadmm_response_read_memory(struct sr_tp_appa_inst *arg_tpai,
 	struct appadmm_response_data_read_memory_s *arg_response)
 {
@@ -616,7 +609,7 @@ static int appadmm_response_read_memory(struct sr_tp_appa_inst *arg_tpai,
  * @retval SR_ERR_... on error
  */
 static int appadmm_dec_storage_info(const struct appadmm_response_data_read_memory_s
-*arg_read_memory, struct appadmm_context *arg_devc)
+	*arg_read_memory, struct appadmm_context *arg_devc)
 {
 	const uint8_t *rdptr;
 	int xloop;
@@ -749,10 +742,10 @@ static int appadmm_enc_read_storage(struct appadmm_request_data_read_memory_s *a
 
 	address_position = (arg_start_entry % arg_storage_info->entry_count);
 
-	if(arg_entry_count > (SR_TP_APPA_MAX_DATA_SIZE / arg_storage_info->entry_size))
+	if (arg_entry_count > (SR_TP_APPA_MAX_DATA_SIZE / arg_storage_info->entry_size))
 		arg_entry_count = (SR_TP_APPA_MAX_DATA_SIZE / arg_storage_info->entry_size);
 
-	if(address_position + arg_entry_count > arg_storage_info->entry_count) {
+	if (address_position + arg_entry_count > arg_storage_info->entry_count) {
 		arg_entry_count = arg_storage_info->entry_count - address_position;
 		arg_read_memory->data_length = arg_entry_count * arg_storage_info->entry_size;
 	} else {
@@ -802,7 +795,7 @@ static int appadmm_dec_read_storage(const struct appadmm_response_data_read_memo
 
 	rdptr = &arg_read_memory->data[0];
 
-	for(xloop = 0; xloop < arg_read_memory->data_length /
+	for (xloop = 0; xloop < arg_read_memory->data_length /
 		arg_storage_info->entry_size; xloop++) {
 		arg_display_data[xloop].reading = read_i24le_inc(&rdptr);
 

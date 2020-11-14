@@ -30,11 +30,16 @@
  * base protocol is always the same and deviates only where the models have
  * differences in ablities, range and features.
  *
+ * Supporting Live data and downloading LOG and MEM data from devices.
+ * Connection is done via BLE or optical serial (USB, EA232, EA485).
+ *
+ * Utilizes the APPA transport protocol for packet handling.
+ *
+ * Support for calibration information is prepared but not implemented.
  */
 
 #include <config.h>
 #include "protocol.h"
-#include "scpi/vxi.h"
 
 static const uint32_t appadmm_scanopts[] = {
 	SR_CONF_CONN,
@@ -150,6 +155,7 @@ static GSList *appadmm_scan(struct sr_dev_driver *di, GSList *options)
 	else
 		devc->rate_interval = APPADMM_RATE_INTERVAL_DEFAULT;
 
+	/* Provide debug output */
 	sr_info("APPA-Device DETECTED; Vendor: %s, Model: %s, OEM-Model: %s, Version: %s, Serial number: %s, Model ID: %i",
 		sdi->vendor,
 		sdi->model,
@@ -208,7 +214,7 @@ static int appadmm_config_get(uint32_t key, GVariant **data,
 	case SR_CONF_LIMIT_MSEC:
 		return sr_sw_limits_config_get(&devc->limits, key, data);
 	case SR_CONF_DATA_SOURCE:
-		return (*data =
+		return(*data =
 			g_variant_new_string(appadmm_data_sources[devc->data_source]))
 			!= NULL ? SR_OK : SR_ERR_ARG;
 	default:
@@ -299,19 +305,23 @@ static int appadmm_acquisition_start(const struct sr_dev_inst *sdi)
 
 	switch (devc->data_source) {
 	case APPADMM_DATA_SOURCE_LIVE:
+		/* Configure limits */
 		sr_sw_limits_acquisition_start(&devc->limits);
 		if ((retr = std_session_send_df_header(sdi)) < SR_OK)
 			return retr;
 
+		/* Start acquisition of live readings */
 		retr = serial_source_add(sdi->session, serial, G_IO_IN, 10,
 			appadmm_acquire_live, (void *) sdi);
 		break;
 
 	case APPADMM_DATA_SOURCE_MEM:
 	case APPADMM_DATA_SOURCE_LOG:
-		if((retr = appadmm_op_storage_info(sdi)) < SR_OK)
+		/* get storage information */
+		if ((retr = appadmm_op_storage_info(sdi)) < SR_OK)
 			return retr;
 
+		/* Select correct data source */
 		switch (devc->data_source) {
 		case APPADMM_DATA_SOURCE_MEM:
 			storage = APPADMM_STORAGE_MEM;
@@ -323,23 +333,27 @@ static int appadmm_acquisition_start(const struct sr_dev_inst *sdi)
 			return SR_ERR_BUG;
 		}
 
+		/* Reset error counter */
 		devc->error_counter = 0;
 
 		/* Frame limit is used for selecting the amount of data read
 		 * from the device. Thhis way the user can reduce the amount
 		 * of data downloaded from the device. */
 		if (devc->limits.limit_frames < 1
-			|| devc->limits.limit_frames > (uint64_t)devc->storage_info[storage].amount)
+			|| devc->limits.limit_frames > (uint64_t) devc->storage_info[storage].amount)
 			devc->limits.limit_frames = devc->storage_info[storage].amount;
 
+		/* Configure limits */
 		sr_sw_limits_acquisition_start(&devc->limits);
 		if ((retr = std_session_send_df_header(sdi)) < SR_OK)
 			return retr;
 
-		if(devc->storage_info[storage].rate > 0) {
+		/* Configure sample interval */
+		if (devc->storage_info[storage].rate > 0) {
 			sr_session_send_meta(sdi, SR_CONF_SAMPLE_INTERVAL, g_variant_new_uint64(devc->storage_info[storage].rate * 1000));
 		}
 
+		/* Start acquisition */
 		retr = serial_source_add(sdi->session, serial, G_IO_IN, 10,
 			appadmm_acquire_storage, (void *) sdi);
 		break;

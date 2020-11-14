@@ -21,15 +21,7 @@
  * @file
  * @version 1
  *
- * APPA B Interface
- *
- * Based on APPA Communication Protocol v2.8
- *
- * Driver for modern APPA meters (handheld, bench, clamp). Communication is
- * done over a serial interface using the known APPA-Frames, see below. The
- * base protocol is always the same and deviates only where the models have
- * differences in ablities, range and features.
- *
+ * APPA Data tables and name resolution
  */
 
 #ifndef LIBSIGROK_HARDWARE_APPA_DMM_PROTOCOL_TABLES_H

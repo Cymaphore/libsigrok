@@ -21,14 +21,9 @@
  * @file
  * @version 1
  *
- * APPA B Interface
- *
- * Based on APPA Communication Protocol v2.8
- *
- * Driver for modern APPA meters (handheld, bench, clamp). Communication is
- * done over a serial interface using the known APPA-Frames, see below. The
- * base protocol is always the same and deviates only where the models have
- * differences in ablities, range and features.
+ * Functions for communication with APPA DMMs (Series 150, 170, 200, 500, S)
+ * with optical serial (USB, EA232) and BLE connectivity. Convert device
+ * information to sigrok samples and vice versa.
  *
  */
 
