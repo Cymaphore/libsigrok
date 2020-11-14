@@ -69,7 +69,25 @@
  */
 #define APPADMM_CONF_SERIAL "9600/8n1"
 
+/**
+ * Amount of possible storage locations (MEM, LOG)
+ */
 #define APPADMM_STORAGE_INFO_COUNT 2
+
+/**
+ * Default internal poll rate
+ */
+#define APPADMM_RATE_INTERVAL_DEFAULT 100000
+
+/**
+ * Poll rate if rate adjustment is disabled
+ */
+#define APPADMM_RATE_INTERVAL_DISABLE 1
+
+/**
+ * Different poll rate for certain devices using a faulty A8105 firmware
+ */
+#define APPADMM_RATE_INTERVAL_APPA_208_506_BLE 200000
 
 /* ********************* */
 /* ****** Presets ****** */
@@ -131,16 +149,8 @@
 /* **************************************** */
 
 /**
- * Type of frame
- */
-enum appadmm_frame_type_e {
-	APPADMM_FRAME_TYPE_INVALID = 0x00,
-	APPADMM_FRAME_TYPE_REQUEST = 0x01,
-	APPADMM_FRAME_TYPE_RESPONSE = 0x02,
-};
-
-/**
  * Data sources
+ * Not all of them are available on all devices
  */
 enum appadmm_data_source_e {
 	APPADMM_DATA_SOURCE_LIVE = 0x00,
@@ -152,8 +162,8 @@ enum appadmm_data_source_e {
  * Storage definition
  */
 enum appadmm_storage_e {
-	APPADMM_STORAGE_MEM = 0x00,
-	APPADMM_STORAGE_LOG = 0x01,
+	APPADMM_STORAGE_MEM = 0x00, /**< Single saved values (hold, etc.) */
+	APPADMM_STORAGE_LOG = 0x01, /**< Saved log data in device with samplerate */
 };
 
 /**
@@ -161,8 +171,8 @@ enum appadmm_storage_e {
  */
 enum appadmm_channel_e {
 	APPADMM_CHANNEL_INVALID = -1,
-	APPADMM_CHANNEL_DISPLAY_PRIMARY = 0x00,
-	APPADMM_CHANNEL_DISPLAY_SECONDARY = 0x01,
+	APPADMM_CHANNEL_DISPLAY_PRIMARY = 0x00, /**< Primary / "main" */
+	APPADMM_CHANNEL_DISPLAY_SECONDARY = 0x01, /**< Secondary / "sub" */
 };
 
 /* **************************************** */
@@ -205,7 +215,7 @@ enum appadmm_model_id_e {
 	 * Invalid
 	 */
 	APPADMM_MODEL_ID_INVALID = 0x00,
-	
+
 	/**
 	 * Invalid
 	 */
@@ -377,14 +387,6 @@ enum appadmm_model_id_e {
 	 * HT Instruments HT8100
 	 * (possibly identifies itself as another 500)
 	 */
-};
-
-/**
- * Possible Protocol IDs
- */
-enum appadmm_protocol_id_e {
-	APPADMM_PROTOCOL_ID_INVALID = 0x00,
-	APPADMM_PROTOCOL_ID_APPA = 0x01,
 };
 
 /**
@@ -643,16 +645,16 @@ enum appadmm_functioncode_e {
  * APPA 500 Series
  */
 enum appadmm_rotarycode_500_e {
-    APPADMM_ROTARYCODE_500_NONE = 0x00,
-    APPADMM_ROTARYCODE_500_AC_V = 0x01,
-    APPADMM_ROTARYCODE_500_AC_MV = 0x02,
-    APPADMM_ROTARYCODE_500_DC_V = 0x03,
-    APPADMM_ROTARYCODE_500_DC_MV = 0x04,
-    APPADMM_ROTARYCODE_500_OHM = 0x05,
-    APPADMM_ROTARYCODE_500_A = 0x06,
-    APPADMM_ROTARYCODE_500_TEMP = 0x07,
-    APPADMM_ROTARYCODE_500_LOZ = 0x08,
-    APPADMM_ROTARYCODE_500_INVALID_09 = 0x09,
+	APPADMM_ROTARYCODE_500_NONE = 0x00,
+	APPADMM_ROTARYCODE_500_AC_V = 0x01,
+	APPADMM_ROTARYCODE_500_AC_MV = 0x02,
+	APPADMM_ROTARYCODE_500_DC_V = 0x03,
+	APPADMM_ROTARYCODE_500_DC_MV = 0x04,
+	APPADMM_ROTARYCODE_500_OHM = 0x05,
+	APPADMM_ROTARYCODE_500_A = 0x06,
+	APPADMM_ROTARYCODE_500_TEMP = 0x07,
+	APPADMM_ROTARYCODE_500_LOZ = 0x08,
+	APPADMM_ROTARYCODE_500_INVALID_09 = 0x09,
 };
 
 /**
@@ -660,16 +662,16 @@ enum appadmm_rotarycode_500_e {
  * APPA 200 Series
  */
 enum appadmm_rotarycode_200_e {
-    APPADMM_ROTARYCODE_200_NONE = 0x00,
-    APPADMM_ROTARYCODE_200_AC_V = 0x01,
-    APPADMM_ROTARYCODE_200_AC_MV = 0x02,
-    APPADMM_ROTARYCODE_200_LOZ = 0x03,
-    APPADMM_ROTARYCODE_200_DC_V = 0x04,
-    APPADMM_ROTARYCODE_200_DC_MV = 0x05,
-    APPADMM_ROTARYCODE_200_OHM = 0x06,
-    APPADMM_ROTARYCODE_200_A = 0x07,
-    APPADMM_ROTARYCODE_200_FREQ = 0x08,
-    APPADMM_ROTARYCODE_200_TEMP = 0x09,
+	APPADMM_ROTARYCODE_200_NONE = 0x00,
+	APPADMM_ROTARYCODE_200_AC_V = 0x01,
+	APPADMM_ROTARYCODE_200_AC_MV = 0x02,
+	APPADMM_ROTARYCODE_200_LOZ = 0x03,
+	APPADMM_ROTARYCODE_200_DC_V = 0x04,
+	APPADMM_ROTARYCODE_200_DC_MV = 0x05,
+	APPADMM_ROTARYCODE_200_OHM = 0x06,
+	APPADMM_ROTARYCODE_200_A = 0x07,
+	APPADMM_ROTARYCODE_200_FREQ = 0x08,
+	APPADMM_ROTARYCODE_200_TEMP = 0x09,
 };
 
 /**
@@ -677,29 +679,20 @@ enum appadmm_rotarycode_200_e {
  * APPA 150 Series
  */
 enum appadmm_rotarycode_150_e {
-    APPADMM_ROTARYCODE_150_NONE = 0x00,
-    APPADMM_ROTARYCODE_150_V = 0x01,
-    APPADMM_ROTARYCODE_150_A = 0x02,
-    APPADMM_ROTARYCODE_150_W = 0x03,
-    APPADMM_ROTARYCODE_150_OHM = 0x04,
-    APPADMM_ROTARYCODE_150_CAP = 0x05,
-    APPADMM_ROTARYCODE_150_FLEX_CURRENT = 0x06,
-    APPADMM_ROTARYCODE_150_TEMP = 0x07,
-    APPADMM_ROTARYCODE_150_INVALID_08 = 0x08,
-    APPADMM_ROTARYCODE_150_INVALID_09 = 0x09,
+	APPADMM_ROTARYCODE_150_NONE = 0x00,
+	APPADMM_ROTARYCODE_150_V = 0x01,
+	APPADMM_ROTARYCODE_150_A = 0x02,
+	APPADMM_ROTARYCODE_150_W = 0x03,
+	APPADMM_ROTARYCODE_150_OHM = 0x04,
+	APPADMM_ROTARYCODE_150_CAP = 0x05,
+	APPADMM_ROTARYCODE_150_FLEX_CURRENT = 0x06,
+	APPADMM_ROTARYCODE_150_TEMP = 0x07,
+	APPADMM_ROTARYCODE_150_INVALID_08 = 0x08,
+	APPADMM_ROTARYCODE_150_INVALID_09 = 0x09,
 };
 /* ************************************************************ */
 /* ****** Structures representing payload of data frames ****** */
 /* ************************************************************ */
-
-/**
- * Frame Header
- */
-struct appadmm_frame_header_s {
-	u_int16_t start; /**< Start code (0x5555) */
-	enum appadmm_command_e command; /**< Command */
-	uint8_t dataLength; /**< Length of Data */
-};
 
 /**
  * Display Data in response to APPADMM_COMMAND_READ_DISPLAY
@@ -711,23 +704,31 @@ struct appadmm_display_data_s {
 	enum appadmm_unit_e unit; /**< Unit of reading */
 
 	union {
-		enum appadmm_data_content_e data_content; /**< Specification of data content */
-		enum appadmm_functioncode_e log_function_code; /**< Function Code */
+		/**
+		 * Data content --> read_display
+		 */
+		enum appadmm_data_content_e data_content;
+
+		/**
+		 * Function code --> read_calibration
+		 */
+		enum appadmm_functioncode_e log_function_code;
 	};
 	enum appadmm_overload_e overload; /**< O.L or not */
 };
 
 /**
- * Log information
+ * Metadata of LOG and MEM information in the device
  */
 struct appadmm_storage_info_s {
-	int amount;
-	int rate;
-	int entry_size;
-	int entry_count;
-	int mem_offset;
-	int mem_count;
-	
+	int amount; /**< Amount of samples stored */
+	int rate; /**< Sample rate (s) or 0 if not applicable */
+	int entry_size; /**< Block size of entry in bytes */
+	int entry_count; /**< Amount of entries per memory device */
+	int mem_offset; /**< Memory device address offset (start address) */
+	int mem_count; /**< Number of memory devices */
+	int mem_start; /**< Memory device offset / start position */
+
 };
 
 /**
@@ -762,26 +763,10 @@ struct appadmm_response_data_read_display_s {
 	enum appadmm_autotest_e auto_test; /**< Auto or manual Test */
 	uint8_t range_code; /**< Range code, depending on function_code and unit */
 	enum appadmm_autorange_e auto_range; /**< Automatic or manual range */
-
-	struct appadmm_display_data_s primary_display_data; /**< Reading of main (lower) display value */
-
-	struct appadmm_display_data_s secondary_display_data; /**< Reading of sub (upper) display value */
-};
-
-/**
- * Request Data for APPADMM_COMMAND_READ_PROTOCOL_VERSION
- */
-struct appadmm_request_data_read_protocol_version_s {
-	/* No rquest data for this command */
-};
-
-/**
- * Response Data for APPADMM_COMMAND_READ_PROTOCOL_VERSION
- */
-struct appadmm_response_data_read_protocol_version_s {
-	enum appadmm_protocol_id_e protocol_id; /**< Protocol type ID */
-	uint8_t major_protocol_version; /**< Protocol major version */
-	uint8_t minor_protocol_version; /**< Protocol minor version */
+	struct appadmm_display_data_s
+	primary_display_data; /**< Reading of main (lower) display value */
+	struct appadmm_display_data_s
+	secondary_display_data; /**< Reading of sub (upper) display value */
 };
 
 /**
@@ -812,13 +797,15 @@ struct appadmm_request_data_read_calibration_s {
  * Response Data for APPADMM_COMMAND_READ_CALIBRATION
  */
 struct appadmm_response_data_read_calibration_s {
+
 	union {
-		enum appadmm_rotarycode_500_e rotary_code_500;
-		enum appadmm_rotarycode_200_e rotary_code_200;
-		enum appadmm_rotarycode_150_e rotary_code_150;
+		enum appadmm_rotarycode_500_e rotary_code_500; /**< APPA 500s rotary code */
+		enum appadmm_rotarycode_200_e rotary_code_200; /**< APPA 200s rotary code */
+		enum appadmm_rotarycode_150_e rotary_code_150; /**< APPA 150s rotary code */
 	};
 	enum appadmm_functioncode_e function_code; /**< Function Code */
-	struct appadmm_display_data_s main_display_data; /**< Reading of main (lower) display value */
+	struct appadmm_display_data_s
+	main_display_data; /**< Reading of main (lower) display value */
 	float original_adc_data_1; /**< Original ADC Data 1 */
 	float original_adc_data_2; /**< Original ADC Data 2 */
 	float offset_data; /**< Offset (debug value) */
@@ -835,34 +822,36 @@ struct appadmm_response_data_read_calibration_s {
  * similar to _info structure in other drivers
  */
 struct appadmm_context {
-	struct sr_tp_appa_inst appa_inst; /**< Appa transport protocol instance */
-	gboolean request_pending; /**< Active request blocker */
-	
+	struct sr_tp_appa_inst appa_inst; /**< APPA transport protocol instance */
+	gboolean request_pending; /**< Active request state */
+	guint64 rate_interval; /**< Internal sample rate interval */
+
 	enum appadmm_model_id_e model_id; /**< Model identifier */
 
 	enum appadmm_data_source_e data_source; /**< Data source */
-	struct appadmm_storage_info_s storage_info[APPADMM_STORAGE_INFO_COUNT]; /**< LOG and MEM info */
+	struct appadmm_storage_info_s
+	storage_info[APPADMM_STORAGE_INFO_COUNT]; /**< LOG and MEM info */
 
 	struct sr_sw_limits limits; /**< Limits for data acquisition */
 	int error_counter; /**< retry on ble issues */
+
+	guint64 rate_timer; /**< Internal rate limit timer */
+	gboolean rate_sent; /**< Internal limit sent state */
 };
 
 /* ***************************************** */
 /* ****** Declaration export to api.c ****** */
 /* ***************************************** */
 
-/* ****** Commands ****** */
-SR_PRIV int appadmm_identify(const struct sr_dev_inst *arg_sdi);
-SR_PRIV int appadmm_storage_info(const struct sr_dev_inst *arg_sdi,
-	struct appadmm_storage_info_s *arg_loginfo);
-SR_PRIV int appadmm_serial_receive_live(int arg_fd, int arg_revents,
-	void *arg_cb_data);
-SR_PRIV int appadmm_serial_receive_storage(int arg_fd, int arg_revents,
-	void *arg_cb_data);
+/* ****** Operations ****** */
+SR_PRIV int appadmm_op_identify(const struct sr_dev_inst *arg_sdi);
+SR_PRIV int appadmm_op_storage_info(const struct sr_dev_inst *arg_sdi);
 
-/* ****** UTIL: Model capability handling ****** */
-SR_PRIV int appadmm_cap_channel(const enum appadmm_model_id_e arg_model_id,
-	const enum appadmm_channel_e arg_channel);
+/* ****** Data acquisition callbacks ****** */
+SR_PRIV int appadmm_acquire_live(int arg_fd, int arg_revents,
+	void *arg_cb_data);
+SR_PRIV int appadmm_acquire_storage(int arg_fd, int arg_revents,
+	void *arg_cb_data);
 
 /* ****** Resolvers / Tables ****** */
 SR_PRIV const char *appadmm_channel_name(const enum appadmm_channel_e arg_channel);

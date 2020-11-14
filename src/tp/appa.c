@@ -108,8 +108,9 @@
 #define SR_TP_APPA_MAX_PAYLOAD_SIZE \
 	(SR_TP_APPA_MAX_DATA_SIZE + SR_TP_APPA_HEADER_SIZE)
 
-static uint8_t sr_tp_appa_checksum(const uint8_t *arg_data, uint8_t arg_size);
-static int sr_tp_appa_buffer_reset(struct sr_tp_appa_inst* arg_tpai);
+static uint8_t sr_tp_appa_checksum(const uint8_t *arg_data, uint8_t arg_size,
+	uint8_t *arg_out_checksum);
+static int sr_tp_appa_buffer_reset(struct sr_tp_appa_inst *arg_tpai);
 
 /**
  * Initialize APPA transport protocol
@@ -119,7 +120,7 @@ static int sr_tp_appa_buffer_reset(struct sr_tp_appa_inst* arg_tpai);
  * @retval SR_OK on success
  * @retval SR_ERR_... on error
  */
-SR_PRIV int sr_tp_appa_init(struct sr_tp_appa_inst* arg_tpai,
+SR_PRIV int sr_tp_appa_init(struct sr_tp_appa_inst *arg_tpai,
 	struct sr_serial_dev_inst *arg_serial)
 {
 	if (arg_tpai == NULL
@@ -141,7 +142,7 @@ SR_PRIV int sr_tp_appa_init(struct sr_tp_appa_inst* arg_tpai,
  * @retval SR_OK on success
  * @retval SR_ERR_... on error
  */
-SR_PRIV int sr_tp_appa_term(struct sr_tp_appa_inst* arg_tpai)
+SR_PRIV int sr_tp_appa_term(struct sr_tp_appa_inst *arg_tpai)
 {
 	if (arg_tpai == NULL)
 		return SR_ERR_BUG;
@@ -163,13 +164,14 @@ SR_PRIV int sr_tp_appa_term(struct sr_tp_appa_inst* arg_tpai)
  * @retval TRUE on successfull handover to serial send
  * @retval SR_ERR_... on error
  */
-SR_PRIV int sr_tp_appa_send(struct sr_tp_appa_inst* arg_tpai,
-	const struct sr_tp_appa_packet* arg_s_packet, gboolean arg_is_blocking)
+SR_PRIV int sr_tp_appa_send(struct sr_tp_appa_inst *arg_tpai,
+	const struct sr_tp_appa_packet *arg_s_packet, gboolean arg_is_blocking)
 {
 	int retr;
 	int dcount;
 	uint8_t buf[SR_TP_APPA_MAX_PACKET_SIZE];
 	uint8_t *wrptr;
+	uint8_t checksum;
 
 	if (arg_tpai == NULL
 		|| arg_s_packet == NULL)
@@ -190,8 +192,10 @@ SR_PRIV int sr_tp_appa_send(struct sr_tp_appa_inst* arg_tpai,
 		write_u8_inc(&wrptr, arg_s_packet->data[dcount]);
 
 	/* write checksum */
-	write_u8_inc(&wrptr, sr_tp_appa_checksum(buf,
-		arg_s_packet->length + SR_TP_APPA_HEADER_SIZE));
+	if ((retr = sr_tp_appa_checksum(buf, arg_s_packet->length
+		+ SR_TP_APPA_HEADER_SIZE, &checksum)) < SR_OK)
+		return retr;
+	write_u8_inc(&wrptr, checksum);
 
 	/* transmit packet */
 	dcount = arg_s_packet->length + SR_TP_APPA_HEADER_SIZE + 1;
@@ -224,13 +228,14 @@ SR_PRIV int sr_tp_appa_send(struct sr_tp_appa_inst* arg_tpai,
  * @retval FALSE No (complete) packet was available
  * @retval SR_ERR_... on error
  */
-SR_PRIV int sr_tp_appa_receive(struct sr_tp_appa_inst* arg_tpai,
-	struct sr_tp_appa_packet* arg_r_packet, gboolean arg_is_blocking)
+SR_PRIV int sr_tp_appa_receive(struct sr_tp_appa_inst *arg_tpai,
+	struct sr_tp_appa_packet *arg_r_packet, gboolean arg_is_blocking)
 {
 	int len;
 	int xloop;
 	int retr;
 	uint8_t buf[SR_TP_APPA_MAX_PACKET_SIZE * 3];
+	uint8_t checksum;
 
 	if (arg_tpai == NULL
 		|| arg_r_packet == NULL)
@@ -280,9 +285,11 @@ SR_PRIV int sr_tp_appa_receive(struct sr_tp_appa_inst* arg_tpai,
 				== arg_tpai->buffer_size) {
 
 				/* validate checksum */
-				if (sr_tp_appa_checksum(arg_tpai->buffer,
-					arg_tpai->buffer[3] + SR_TP_APPA_HEADER_SIZE)
-					== arg_tpai->buffer[arg_tpai->buffer_size - 1]) {
+				if ((retr = sr_tp_appa_checksum(arg_tpai->buffer,
+					arg_tpai->buffer[3]
+					+ SR_TP_APPA_HEADER_SIZE, &checksum))
+					< SR_OK) {
+				} else if (checksum == arg_tpai->buffer[arg_tpai->buffer_size - 1]) {
 					arg_r_packet->command = arg_tpai->buffer[2];
 					arg_r_packet->length = arg_tpai->buffer[3];
 
@@ -328,9 +335,9 @@ SR_PRIV int sr_tp_appa_receive(struct sr_tp_appa_inst* arg_tpai,
  * @retval FALSE if no response has been received
  * @retval SR_ERR_... on error
  */
-SR_PRIV int sr_tp_appa_send_receive(struct sr_tp_appa_inst* arg_tpai,
-	const struct sr_tp_appa_packet* arg_s_packet,
-	struct sr_tp_appa_packet* arg_r_packet)
+SR_PRIV int sr_tp_appa_send_receive(struct sr_tp_appa_inst *arg_tpai,
+	const struct sr_tp_appa_packet *arg_s_packet,
+	struct sr_tp_appa_packet *arg_r_packet)
 {
 	int trycount;
 	int retr;
@@ -366,20 +373,22 @@ SR_PRIV int sr_tp_appa_send_receive(struct sr_tp_appa_inst* arg_tpai,
  *
  * @param arg_data Data to calculate APPA-checksum for
  * @param arg_size Size of data
- * @return Checksum on success or 0 on error
+ * @param arg_out_checksum Checksum result
+ * @retval SR_OK if checksum was calculated and stored in arg_out_checksum
+ * @retval SR_ERR_... on error
  */
-static uint8_t sr_tp_appa_checksum(const uint8_t *arg_data, uint8_t arg_size)
+static uint8_t sr_tp_appa_checksum(const uint8_t *arg_data, uint8_t arg_size,
+	uint8_t *arg_out_checksum)
 {
-	uint8_t checksum;
+	if (arg_data == NULL
+		|| arg_out_checksum == NULL)
+		return SR_ERR_BUG;
 
-	if (arg_data == NULL)
-		return 0;
-
-	checksum = 0;
+	*arg_out_checksum = 0;
 	while (arg_size-- > 0)
-		checksum += arg_data[arg_size];
+		*arg_out_checksum += arg_data[arg_size];
 
-	return checksum;
+	return SR_OK;
 }
 
 /**
@@ -391,7 +400,7 @@ static uint8_t sr_tp_appa_checksum(const uint8_t *arg_data, uint8_t arg_size)
  * @retval SR_OK on success
  * @retval SR_ERR_... on error
  */
-static int sr_tp_appa_buffer_reset(struct sr_tp_appa_inst* arg_tpai)
+static int sr_tp_appa_buffer_reset(struct sr_tp_appa_inst *arg_tpai)
 {
 	if (arg_tpai == NULL)
 		return SR_ERR_BUG;

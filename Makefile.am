@@ -231,8 +231,8 @@ src_libdrivers_la_SOURCES += \
 endif
 if HW_APPA_DMM
 src_libdrivers_la_SOURCES += \
-	src/hardware/appa-dmm/packet.h \
-	src/hardware/appa-dmm/tables.h \
+	src/hardware/appa-dmm/protocol_packet.h \
+	src/hardware/appa-dmm/protocol_tables.h \
 	src/hardware/appa-dmm/protocol.h \
 	src/hardware/appa-dmm/protocol.c \
 	src/hardware/appa-dmm/api.c

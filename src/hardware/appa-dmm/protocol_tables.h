@@ -32,8 +32,8 @@
  *
  */
 
-#ifndef LIBSIGROK_HARDWARE_APPA_DMM_TABLES_H
-#define LIBSIGROK_HARDWARE_APPA_DMM_TABLES_H
+#ifndef LIBSIGROK_HARDWARE_APPA_DMM_PROTOCOL_TABLES_H
+#define LIBSIGROK_HARDWARE_APPA_DMM_PROTOCOL_TABLES_H
 
 #include <config.h>
 #include "protocol.h"
@@ -100,6 +100,7 @@ SR_PRIV const char *appadmm_channel_name(const enum appadmm_channel_e arg_channe
 SR_PRIV const char *appadmm_model_id_name(const enum appadmm_model_id_e arg_model_id)
 {
 	switch (arg_model_id) {
+	case APPADMM_MODEL_ID_OVERFLOW:
 	case APPADMM_MODEL_ID_INVALID:
 		return APPADMM_STRING_NA;
 	case APPADMM_MODEL_ID_150:
@@ -279,4 +280,4 @@ static const char *appadmm_wordcode_name(const enum appadmm_wordcode_e arg_wordc
 	return APPADMM_STRING_NA;
 }
 
-#endif/*LIBSIGROK_HARDWARE_APPA_DMM_TABLES_H*/
+#endif/*LIBSIGROK_HARDWARE_APPA_DMM_PROTOCOL_TABLES_H*/

@@ -48,6 +48,7 @@ static const uint32_t appadmm_drvopts[] = {
 static const uint32_t appadmm_devopts[] = {
 	SR_CONF_CONTINUOUS,
 	SR_CONF_LIMIT_SAMPLES | SR_CONF_GET | SR_CONF_SET,
+	SR_CONF_LIMIT_FRAMES | SR_CONF_GET | SR_CONF_SET,
 	SR_CONF_LIMIT_MSEC | SR_CONF_GET | SR_CONF_SET,
 	SR_CONF_DATA_SOURCE | SR_CONF_GET | SR_CONF_SET | SR_CONF_LIST,
 };
@@ -70,7 +71,7 @@ static GSList *appadmm_scan(struct sr_dev_driver *di, GSList *options)
 	struct sr_channel_group *group;
 	struct sr_channel *channel_primary;
 	struct sr_channel *channel_secondary;
-	
+
 	int retr;
 
 	GSList *it;
@@ -106,7 +107,10 @@ static GSList *appadmm_scan(struct sr_dev_driver *di, GSList *options)
 
 	serial = sr_serial_dev_inst_new(conn, serialcomm);
 
-	if (serial_open(serial, SERIAL_RDWR) != SR_OK)
+	if (serial_open(serial, SERIAL_RDWR) < SR_OK)
+		return NULL;
+
+	if (serial_flush(serial) < SR_OK)
 		return NULL;
 
 	sdi = g_malloc0(sizeof(*sdi));
@@ -116,21 +120,35 @@ static GSList *appadmm_scan(struct sr_dev_driver *di, GSList *options)
 	sdi->status = SR_ST_INACTIVE;
 	sdi->driver = di;
 	sdi->priv = devc;
-	
+
+	/* APPA-instance for packet handling */
 	sr_tp_appa_init(&devc->appa_inst, serial);
 
 	/* Scan for devices by sendind READ_INFORMATION */
-	appadmm_identify(sdi);
+	appadmm_op_identify(sdi);
 
 	/* If received model is invalid or nothing received, abort */
 	if (devc->model_id == APPADMM_MODEL_ID_INVALID
 		|| devc->model_id < APPADMM_MODEL_ID_INVALID
 		|| devc->model_id > APPADMM_MODEL_ID_OVERFLOW) {
-		sr_err("APPA-Device NOT FOUND or INVALID; No valid response to read_information request.");
+		sr_err("APPA-Device NOT FOUND or INVALID; No valid response "
+			"to read_information request.");
 		sr_serial_dev_inst_free(serial);
 		serial_close(serial);
 		return NULL;
 	}
+
+	/* Older models with the AMICCOM A8105 have troubles with higher rates
+	 * over BLE, let them run without time windows
+	 */
+	if (devc->appa_inst.serial->bt_conn_type == SER_BT_CONN_APPADMM
+		&& (devc->model_id == APPADMM_MODEL_ID_208B
+		|| devc->model_id == APPADMM_MODEL_ID_506B
+		|| devc->model_id == APPADMM_MODEL_ID_506B_2
+		|| devc->model_id == APPADMM_MODEL_ID_150B))
+		devc->rate_interval = APPADMM_RATE_INTERVAL_DISABLE;
+	else
+		devc->rate_interval = APPADMM_RATE_INTERVAL_DEFAULT;
 
 	sr_info("APPA-Device DETECTED; Vendor: %s, Model: %s, OEM-Model: %s, Version: %s, Serial number: %s, Model ID: %i",
 		sdi->vendor,
@@ -139,30 +157,32 @@ static GSList *appadmm_scan(struct sr_dev_driver *di, GSList *options)
 		sdi->version,
 		sdi->serial_num,
 		devc->model_id);
-	
+
+	/* Main reading */
 	channel_primary = sr_channel_new(sdi,
 		APPADMM_CHANNEL_DISPLAY_PRIMARY,
 		SR_CHANNEL_ANALOG,
 		TRUE,
 		appadmm_channel_name(APPADMM_CHANNEL_DISPLAY_PRIMARY));
-	
+
+	/* Sub reading */
 	channel_secondary = sr_channel_new(sdi,
 		APPADMM_CHANNEL_DISPLAY_SECONDARY,
 		SR_CHANNEL_ANALOG,
 		TRUE,
 		appadmm_channel_name(APPADMM_CHANNEL_DISPLAY_SECONDARY));
-	
+
+	/* Other groups are possible (cal data, etc.) */
 	group = g_malloc0(sizeof(*group));
 	group->name = g_strdup("Display");
 	sdi->channel_groups = g_slist_append(sdi->channel_groups, group);
-	
+
 	group->channels = g_slist_append(group->channels, channel_primary);
 	group->channels = g_slist_append(group->channels, channel_secondary);
-	
+
 	devices = g_slist_append(devices, sdi);
 
-	retr = serial_close(serial);
-	if (retr < SR_OK) {
+	if ((retr = serial_close(serial)) < SR_OK) {
 		sr_err("Unable to close device after scan");
 		return NULL;
 	}
@@ -175,8 +195,6 @@ static int appadmm_config_get(uint32_t key, GVariant **data,
 {
 	struct appadmm_context *devc;
 
-	int retr;
-
 	(void) cg;
 
 	if (!sdi)
@@ -184,20 +202,20 @@ static int appadmm_config_get(uint32_t key, GVariant **data,
 
 	devc = sdi->priv;
 
-	retr = SR_OK;
 	switch (key) {
 	case SR_CONF_LIMIT_SAMPLES:
 	case SR_CONF_LIMIT_FRAMES:
 	case SR_CONF_LIMIT_MSEC:
 		return sr_sw_limits_config_get(&devc->limits, key, data);
 	case SR_CONF_DATA_SOURCE:
-		*data = g_variant_new_string(appadmm_data_sources[devc->data_source]);
-		break;
+		return (*data =
+			g_variant_new_string(appadmm_data_sources[devc->data_source]))
+			!= NULL ? SR_OK : SR_ERR_ARG;
 	default:
 		return SR_ERR_NA;
 	}
 
-	return retr;
+	return SR_ERR_ARG;
 }
 
 static int appadmm_config_set(uint32_t key, GVariant *data,
@@ -257,6 +275,17 @@ static int appadmm_config_list(uint32_t key, GVariant **data,
 	return retr;
 }
 
+/**
+ * Start Data Acquisition, for Live, LOG and MEM alike.
+ *
+ * For MEM and LOG entries, check if the device is capable of such a feature
+ * and request the amount of data present. Otherwise acquisition will instantly
+ * fail.
+ *
+ * @param sdi Serial Device Instance
+ * @retval SR_OK on success
+ * @retval SR_ERR_... on error
+ */
 static int appadmm_acquisition_start(const struct sr_dev_inst *sdi)
 {
 	struct appadmm_context *devc;
@@ -267,7 +296,7 @@ static int appadmm_acquisition_start(const struct sr_dev_inst *sdi)
 
 	devc = sdi->priv;
 	serial = sdi->conn;
-	
+
 	switch (devc->data_source) {
 	case APPADMM_DATA_SOURCE_LIVE:
 		sr_sw_limits_acquisition_start(&devc->limits);
@@ -275,12 +304,12 @@ static int appadmm_acquisition_start(const struct sr_dev_inst *sdi)
 			return retr;
 
 		retr = serial_source_add(sdi->session, serial, G_IO_IN, 10,
-			appadmm_serial_receive_live, (void *) sdi);
+			appadmm_acquire_live, (void *) sdi);
 		break;
-		
+
 	case APPADMM_DATA_SOURCE_MEM:
 	case APPADMM_DATA_SOURCE_LOG:
-		if((retr = appadmm_storage_info(sdi, devc->storage_info)) < SR_OK)
+		if((retr = appadmm_op_storage_info(sdi)) < SR_OK)
 			return retr;
 
 		switch (devc->data_source) {
@@ -293,24 +322,26 @@ static int appadmm_acquisition_start(const struct sr_dev_inst *sdi)
 		default:
 			return SR_ERR_BUG;
 		}
-		
-		devc->limits.limit_samples *= 2;
+
 		devc->error_counter = 0;
-		
-		if (devc->limits.limit_samples < 1
-			|| devc->limits.limit_samples > (uint64_t)devc->storage_info[storage].amount)
-			devc->limits.limit_samples = devc->storage_info[storage].amount * 2;
-		
+
+		/* Frame limit is used for selecting the amount of data read
+		 * from the device. Thhis way the user can reduce the amount
+		 * of data downloaded from the device. */
+		if (devc->limits.limit_frames < 1
+			|| devc->limits.limit_frames > (uint64_t)devc->storage_info[storage].amount)
+			devc->limits.limit_frames = devc->storage_info[storage].amount;
+
 		sr_sw_limits_acquisition_start(&devc->limits);
 		if ((retr = std_session_send_df_header(sdi)) < SR_OK)
 			return retr;
 
 		if(devc->storage_info[storage].rate > 0) {
-			sr_session_send_meta(sdi, SR_CONF_SAMPLE_INTERVAL, g_variant_new_int64(devc->storage_info[storage].rate * 1000));
+			sr_session_send_meta(sdi, SR_CONF_SAMPLE_INTERVAL, g_variant_new_uint64(devc->storage_info[storage].rate * 1000));
 		}
-		
+
 		retr = serial_source_add(sdi->session, serial, G_IO_IN, 10,
-			appadmm_serial_receive_storage, (void *) sdi);
+			appadmm_acquire_storage, (void *) sdi);
 		break;
 	}
 
@@ -337,6 +368,9 @@ static int appadmm_acquisition_start(const struct sr_dev_inst *sdi)
 	.context = NULL, \
 })
 
+/**
+ * List of assigned driver names
+ */
 SR_REGISTER_DEV_DRIVER_LIST(appadmm_drivers,
 	APPADMM_DRIVER_ENTRY("appa-dmm", "APPA 150, 170, 200, 500, A, S and sFlex-Series"),
 	APPADMM_DRIVER_ENTRY("benning-dmm", "BENNING MM 10-1, MM 12, CM 9-2, CM 10-1, CM 12, -PV"),
