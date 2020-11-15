@@ -153,8 +153,7 @@ static const char *conn_name_text(enum ser_bt_conn_t type)
  *   types are 'rfcomm', 'ble122', 'cc254x', 'appa-dmm', and potentially others
  *   in a future implementation.
  * - The next field is the remote device's address, either separated
- *   by dashes or spaces, or not separated at all. Colons are currently
- *   not usable in most cases on the command line.
+ *   by colons or dashes or spaces, or not separated at all.
  * - Other parameters (RFCOMM channel, notify handles and write values)
  *   get derived from the connection type. A future implementation may
  *   accept more fields, but the syntax is yet to get developed.
@@ -164,7 +163,7 @@ static const char *conn_name_text(enum ser_bt_conn_t type)
  *
  * Examples:
  *   bt/rfcomm/11-22-33-44-55-66
- *   bt/ble122/88-6b-12-34-56-78
+ *   bt/ble122/88:6b:12:34:56:78
  *   bt/cc254x/0123456789ab
  *   bt/appa-dmm/18-7a-12-34-56-78
  *
