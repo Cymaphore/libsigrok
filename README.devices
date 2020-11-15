@@ -566,8 +566,10 @@ APPA Multimeters
 
 The driver provides support for all current APPA Multimeters with optical
 serial (EA232, USB) and Bluetooth LE connectivity. These devices are
-available under many brands. Information about the devices and brands
-is documented in sigrok wiki: https://sigrok.org/wiki/APPA_Multimeters
+available under many brands. Information about the devices and brands, as
+well as further information about using this driver is documented here:
+
+https://sigrok.org/wiki/APPA_Multimeters
 
 The default name of the driver is "appa-dmm", for usability reasons
 a couple of aliases have been established ("benning-dmm", etc.).
@@ -580,60 +582,3 @@ Available features:
 
 The actual availability of a feature depends on hardware capabilities.
 If a feature is not present, an error is reported.
-
-While all features are available via both BLE and Serial, the BLE
-connectivity on certain devices (for example 506B) is significantly
-slower. Consider using optical serial connection for logging sessions
-where precise high interval readings at full rate are required.
-
-The following examples demonstrate using the driver with a
-BENNING MM 12 (APPA 506B) digital multimeter.
-
-Example about establishing optical serial (USB) connection:
-
-Assuming the meter is turned on, plugged in and the usb-serial
-driver is loadad and up (should happen automatically).
-
-List devices, if unsure what the serial port is:
-
-  # sigrok-cli --list-serial
-  /dev/ttyUSB0  CP2102 USB to UART Bridge Controller - 2020y000231
-
-Scan for device with USB/Serial connection:
-
-  $ sigrok-cli -d benning-dmm:conn=/dev/ttyUSB0 --scan
-
-Show readings from connected meter:
-
-  $ sigrok-cli -d benning-dmm:conn=/dev/ttyUSB0 --continuous
-
-Example about establishing Bluetooth LE connection:
-
-Assuming the meter is turned on and bluetooth activated on the meter
-and the PC. Important: Your Bluetooth-Controller must support BLE.
-
-Scan for BLE devices:
-
-  # sudo sigrok-cli --list-serial
-  bt/appa-dmm/18-7A-93-A1-41-83   BENNING MM12 (BLE)
-
-If your OS / UI supports it, you can also use the Bluetooth scanning
-capability from the system tray and pick the MAC address from the
-details there. As a BLE connection driver, "appa-dmm" must be used as
-seen in the connection string in the example.
-
-"18:7A:93:A1:41:83" acts as an example for the device address you
-will find. For sigrok the ":" must be replaced by "-" for now. That
-device address is used for the following examples, just replace it
-by the address of your own meter.
-
-The full connection string then would look like this, as seen in the
-scanning result: bt/appa-dmm/18-7A-93-A1-41-83
-
-Scan for meter with BLE connection:
-
-  $ sigrok-cli -d benning-dmm:conn=bt/appa-dmm/18-7A-93-A1-41-83 --scan
-
-Show readings from connected meter:
-
-  $ sigrok-cli -d benning-dmm:conn=bt/appa-dmm/18-7A-93-A1-41-83 --continuous
