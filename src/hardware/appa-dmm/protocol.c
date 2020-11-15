@@ -76,12 +76,10 @@ static int appadmm_transform_display_data(const struct sr_dev_inst *arg_sdi,
 	devc = arg_sdi->priv;
 	val = 0;
 
-	/* Initialize analog sample */
 	if ((retr = sr_analog_init(&analog, &encoding, &meaning, &spec, 0))
 		< SR_OK)
 		return retr;
 
-	/* Is it a Live or Storage reading? */
 	if (arg_read_data == NULL)
 		function_code = arg_display_data->log_function_code;
 	else
@@ -109,7 +107,6 @@ static int appadmm_transform_display_data(const struct sr_dev_inst *arg_sdi,
 
 			/* Display is showing numeric or OL value */
 
-			/* Decode decimal point position */
 			switch (arg_display_data->dot) {
 
 			default:
@@ -140,7 +137,6 @@ static int appadmm_transform_display_data(const struct sr_dev_inst *arg_sdi,
 
 			}
 
-			/* Decode data content type */
 			switch (arg_display_data->data_content) {
 
 			case APPADMM_DATA_CONTENT_MAXIMUM:
@@ -212,12 +208,10 @@ static int appadmm_transform_display_data(const struct sr_dev_inst *arg_sdi,
 
 			}
 
-			/* Auto range active */
 			if (arg_read_data != NULL
 				&& arg_read_data->auto_range == APPADMM_AUTO_RANGE)
 				analog.meaning->mqflags |= SR_MQFLAG_AUTORANGE;
 
-			/* Value unit decoding */
 			switch (arg_display_data->unit) {
 
 			default: case APPADMM_UNIT_NONE:
@@ -391,7 +385,6 @@ static int appadmm_transform_display_data(const struct sr_dev_inst *arg_sdi,
 
 			}
 
-			/* Function code decoding */
 			switch (function_code) {
 
 			case APPADMM_FUNCTIONCODE_PEAK_HOLD_UA:
@@ -500,13 +493,11 @@ static int appadmm_transform_display_data(const struct sr_dev_inst *arg_sdi,
 				break;
 			}
 
-			/* Assignment of amount of digits */
 			analog.spec->spec_digits = digits;
 			analog.encoding->digits = digits;
 
 			display_reading_value *= unit_factor;
 
-			/* OL */
 			if (arg_display_data->overload == APPADMM_OVERLOAD
 				|| is_dash)
 				val = INFINITY;
@@ -569,10 +560,8 @@ static int appadmm_transform_display_data(const struct sr_dev_inst *arg_sdi,
 		break;
 	}
 
-	/* select current channel */
 	channel = g_slist_nth_data(arg_sdi->channels, arg_channel);
 
-	/* configure sample and submit it */
 	if (analog.meaning->mq == 0) {
 		val = INFINITY;
 		analog.meaning->unit = SR_UNIT_UNITLESS;
@@ -630,12 +619,10 @@ static int appadmm_transform_sample_id(const struct sr_dev_inst *arg_sdi,
 	devc = arg_sdi->priv;
 	val = 0;
 
-	/* Initialize analog sample */
 	if ((retr = sr_analog_init(&analog, &encoding, &meaning, &spec, 0))
 		< SR_OK)
 		return retr;
 
-	/* Generate and transmit sample */
 	val = (devc->limits.frames_read + 1);
 	analog.encoding->digits = 0;
 	analog.spec->spec_digits = 0;
@@ -680,27 +667,22 @@ static int appadmm_process_read_display(const struct sr_dev_inst *arg_sdi,
 	devc = arg_sdi->priv;
 	retr = SR_OK;
 
-	/* Begin frame */
 	packet.type = SR_DF_FRAME_BEGIN;
 	sr_session_send(arg_sdi, &packet);
 
-	/* Primary reading */
 	if ((retr = appadmm_transform_display_data(arg_sdi,
 		APPADMM_CHANNEL_DISPLAY_PRIMARY,
 		&arg_data->primary_display_data, arg_data)) < SR_OK)
 		return retr;
 
-	/* Secondary reading */
 	if ((retr = appadmm_transform_display_data(arg_sdi,
 		APPADMM_CHANNEL_DISPLAY_SECONDARY,
 		&arg_data->secondary_display_data, arg_data)) < SR_OK)
 		return retr;
 
-	/* End frame */
 	packet.type = SR_DF_FRAME_END;
 	sr_session_send(arg_sdi, &packet);
 
-	/* Update limits */
 	sr_sw_limits_update_frames_read(&devc->limits, 1);
 
 	return retr;
@@ -737,7 +719,6 @@ static int appadmm_process_storage(const struct sr_dev_inst *arg_sdi,
 	devc = arg_sdi->priv;
 	retr = SR_OK;
 
-	/* Pick correct storage type */
 	switch (devc->data_source) {
 	case APPADMM_DATA_SOURCE_MEM:
 		storage = APPADMM_STORAGE_MEM;
@@ -749,40 +730,32 @@ static int appadmm_process_storage(const struct sr_dev_inst *arg_sdi,
 		return SR_ERR_BUG;
 	}
 
-	/* Decode storage data */
 	if ((retr = appadmm_dec_read_storage(arg_data, &devc->storage_info[storage], display_data))
 		< SR_OK)
 		return retr;
 
-	/* Process recieved samples one after another */
 	for (xloop = 0;
 		xloop < arg_data->data_length /
 		devc->storage_info[storage].entry_size;
 		xloop++) {
 
-		/* Begin frame */
 		packet.type = SR_DF_FRAME_BEGIN;
 		sr_session_send(arg_sdi, &packet);
 
-		/* Primary */
 		if ((retr = appadmm_transform_display_data(arg_sdi,
 			APPADMM_CHANNEL_DISPLAY_PRIMARY,
 			&display_data[xloop], NULL)) < SR_OK)
 			return retr;
 
-		/* Secondary (Reading number in Storage) */
 		if ((retr = appadmm_transform_sample_id(arg_sdi,
 			APPADMM_CHANNEL_DISPLAY_SECONDARY)) < SR_OK)
 			return retr;
 
-		/* End frame */
 		packet.type = SR_DF_FRAME_END;
 		sr_session_send(arg_sdi, &packet);
 
-		/* Update limits */
 		sr_sw_limits_update_frames_read(&devc->limits, 1);
 
-		/* check for limits or stop request */
 		if (sr_sw_limits_check(&devc->limits)) {
 			return SR_OK;
 		}
@@ -824,7 +797,6 @@ SR_PRIV int appadmm_op_identify(const struct sr_dev_inst *arg_sdi)
 	devc = arg_sdi->priv;
 	sdi_w = (struct sr_dev_inst*) arg_sdi;
 
-	/* Get information from device. */
 	if ((retr = appadmm_rere_read_information(&devc->appa_inst,
 		&request, &response)) < SR_OK)
 		return retr;
@@ -833,15 +805,15 @@ SR_PRIV int appadmm_op_identify(const struct sr_dev_inst *arg_sdi)
 	serial_number = NULL;
 	delim = NULL;
 
-	/* Parse version and turn it into string reading */
 	sdi_w->version = g_strdup_printf("%01d.%02d",
 		response.firmware_version / 100,
 		response.firmware_version % 100);
 
-	/* Model ID number */
 	devc->model_id = response.model_id;
 
-	/* Try to assign model name based on device capabilities */
+	/* Try to assign model name based on device capabilities
+	 * Not all devices provide model_name
+	 */
 	switch (devc->model_id) {
 	default:
 	case APPADMM_MODEL_ID_OVERFLOW:
@@ -874,21 +846,19 @@ SR_PRIV int appadmm_op_identify(const struct sr_dev_inst *arg_sdi)
 	case APPADMM_MODEL_ID_177:
 	case APPADMM_MODEL_ID_179:
 		if (devc->appa_inst.serial->bt_conn_type == SER_BT_CONN_APPADMM) {
-			/* figure out how to get the BLE Name and put it here */
-			/* model_name = ? */
+			/* TODO for future: figure out how to get the BLE Name
+			 * properly and put it here
+			 */
 		}
 		break;
 	}
 
-	/* Fallback: Use APPA-designation if name is not available */
 	if (model_name == NULL)
 		model_name = (char*) appadmm_model_id_name(devc->model_id);
 
-	/* Parse received model string and turn it into vendor/model combination */
 	if (model_name[0] != 0)
 		delim = g_strrstr(model_name, " ");
 
-	/* Convert to sigrok vendor/model */
 	if (delim == NULL) {
 		sdi_w->vendor = g_strdup("APPA");
 		sdi_w->model = g_strdup(model_name);
@@ -898,7 +868,6 @@ SR_PRIV int appadmm_op_identify(const struct sr_dev_inst *arg_sdi)
 			strlen(model_name) - strlen(arg_sdi->model) - 1);
 	}
 
-	/* Assign serial number, if available */
 	if (serial_number != NULL)
 		sdi_w->serial_num = g_strdup(serial_number);
 
@@ -932,10 +901,13 @@ SR_PRIV int appadmm_op_storage_info(const struct sr_dev_inst *arg_sdi)
 
 	devc = arg_sdi->priv;
 
-	/* Clear storage information - safe defaults (empty storage) */
 	appadmm_clear_storage_info(devc->storage_info);
 
-	/* Select Model ID capabilities */
+	/* Select Model ID capabilities
+	 * Memory layout of the model differs a lot, try to read as much
+	 * as possible from the device, fill in the rest from static
+	 * datasheet values
+	 */
 	switch (devc->model_id) {
 	default:
 	case APPADMM_MODEL_ID_OVERFLOW:
@@ -948,17 +920,14 @@ SR_PRIV int appadmm_op_storage_info(const struct sr_dev_inst *arg_sdi)
 		break;
 	case APPADMM_MODEL_ID_150:
 	case APPADMM_MODEL_ID_150B:
-		/* Location of storage information in these models */
 		request.device_number = 0;
 		request.memory_address = 0x31;
 		request.data_length = 6;
 
-		/* Request information from device */
 		if ((retr = appadmm_rere_read_memory(&devc->appa_inst,
 			&request, &response)) < SR_OK)
 			return retr;
 
-		/* Decode response */
 		if ((retr = appadmm_dec_storage_info(&response, devc)) < SR_OK)
 			return retr;
 		break;
@@ -971,17 +940,14 @@ SR_PRIV int appadmm_op_storage_info(const struct sr_dev_inst *arg_sdi)
 	case APPADMM_MODEL_ID_506:
 	case APPADMM_MODEL_ID_506B:
 	case APPADMM_MODEL_ID_506B_2:
-		/* Location of storage information in these models */
 		request.device_number = 0;
 		request.memory_address = 0xa;
 		request.data_length = 6;
 
-		/* Request information from device */
 		if ((retr = appadmm_rere_read_memory(&devc->appa_inst,
 			&request, &response)) < SR_OK)
 			return retr;
 
-		/* Decode response */
 		if ((retr = appadmm_dec_storage_info(&response, devc)) < SR_OK)
 			return retr;
 		break;
@@ -993,17 +959,14 @@ SR_PRIV int appadmm_op_storage_info(const struct sr_dev_inst *arg_sdi)
 	case APPADMM_MODEL_ID_175:
 	case APPADMM_MODEL_ID_177:
 	case APPADMM_MODEL_ID_179:
-		/* Location of storage information in these models */
 		request.device_number = 0;
 		request.memory_address = 0x630;
 		request.data_length = 16;
 
-		/* Request information from device */
 		if ((retr = appadmm_rere_read_memory(&devc->appa_inst,
 			&request, &response)) < SR_OK)
 			return retr;
 
-		/* Decode response */
 		if ((retr = appadmm_dec_storage_info(&response, devc)) < SR_OK)
 			return retr;
 		break;
@@ -1047,7 +1010,6 @@ SR_PRIV int appadmm_acquire_live(int arg_fd, int arg_revents,
 	if (!(devc = sdi->priv))
 		return FALSE;
 
-	/* Try to receive and process incoming data */
 	if (arg_revents == G_IO_IN) {
 		/* process (a portion of the) received data */
 		if ((retr = appadmm_response_read_display(&devc->appa_inst,
@@ -1063,7 +1025,6 @@ SR_PRIV int appadmm_acquire_live(int arg_fd, int arg_revents,
 		}
 	}
 
-	/* if no request is pending, send out a new one */
 	if (!devc->request_pending) {
 		rate_window_time = g_get_monotonic_time() / devc->rate_interval;
 		/* align requests to the time window */
@@ -1071,7 +1032,6 @@ SR_PRIV int appadmm_acquire_live(int arg_fd, int arg_revents,
 			&& !devc->rate_sent) {
 			devc->rate_sent = TRUE;
 			devc->rate_timer = rate_window_time;
-			/* request display readings from device */
 			if (appadmm_request_read_display(&devc->appa_inst, &request)
 				< TRUE) {
 				sr_warn("Aborted in appadmm_send");
@@ -1084,7 +1044,6 @@ SR_PRIV int appadmm_acquire_live(int arg_fd, int arg_revents,
 		}
 	}
 
-	/* check for limits or stop request */
 	if (sr_sw_limits_check(&devc->limits)
 		|| abort == TRUE) {
 		sr_info("Stopping acquisition");
@@ -1129,7 +1088,6 @@ SR_PRIV int appadmm_acquire_storage(int arg_fd, int arg_revents,
 	if (!(devc = sdi->priv))
 		return FALSE;
 
-	/* Pick data source*/
 	switch (devc->data_source) {
 	case APPADMM_DATA_SOURCE_MEM:
 		storage = APPADMM_STORAGE_MEM;
@@ -1141,7 +1099,6 @@ SR_PRIV int appadmm_acquire_storage(int arg_fd, int arg_revents,
 		return SR_ERR_BUG;
 	}
 
-	/* Try to receive and process incoming data */
 	if (arg_revents == G_IO_IN) {
 		/* Read (portion of) response from the device */
 		if ((retr = appadmm_response_read_memory(&devc->appa_inst,
@@ -1156,7 +1113,6 @@ SR_PRIV int appadmm_acquire_storage(int arg_fd, int arg_revents,
 			/* Slowly decrease error counter */
 			if (devc->error_counter > 0)
 				devc->error_counter--;
-			/* if complete, process response and generate samples */
 			if (appadmm_process_storage(sdi, &response)
 				< SR_OK) {
 				sr_warn("Aborted in appadmm_process_storage, result %d",
@@ -1167,7 +1123,6 @@ SR_PRIV int appadmm_acquire_storage(int arg_fd, int arg_revents,
 		}
 	}
 
-	/* if no request is pending, send out a new one */
 	if (!devc->request_pending && !abort) {
 		if ((retr = appadmm_enc_read_storage(&request,
 			&devc->storage_info[storage],
@@ -1183,7 +1138,6 @@ SR_PRIV int appadmm_acquire_storage(int arg_fd, int arg_revents,
 		}
 	}
 
-	/* check for limits or stop request */
 	if (sr_sw_limits_check(&devc->limits)
 		|| abort == TRUE) {
 		sr_info("Stopping acquisition");

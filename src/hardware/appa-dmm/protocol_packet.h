@@ -81,12 +81,12 @@ static int appadmm_get_request_size(enum appadmm_command_e arg_command)
 	case APPADMM_COMMAND_OTA_START_UPGRADE_PROCEDURE:
 		return APPADMM_FRAME_DATA_SIZE_REQUEST_OTA_START_UPGRADE_PROCEDURE;
 
-		/* these are responses only */
 	case APPADMM_COMMAND_FAILURE:
 	case APPADMM_COMMAND_SUCCESS:
+		/* these are responses only */
 
-		/* safe default */
 	default:
+		/* safe default */
 		return SR_ERR_DATA;
 	}
 	return SR_ERR_BUG;
@@ -120,8 +120,6 @@ static int appadmm_get_response_size(enum appadmm_command_e arg_command)
 	case APPADMM_COMMAND_SUCCESS:
 		return APPADMM_FRAME_DATA_SIZE_RESPONSE_SUCCESS;
 
-		/* these respond with APPADMM_FRAME_DATA_SIZE_RESPONSE_SUCCESS
-		 * or APPADMM_FRAME_DATA_SIZE_RESPONSE_FAILURE */
 	case APPADMM_COMMAND_WRITE_UART_CONFIGURATION:
 	case APPADMM_COMMAND_CAL_ENTER:
 	case APPADMM_COMMAND_CAL_WRITE_FUNCTION_CODE:
@@ -132,9 +130,11 @@ static int appadmm_get_response_size(enum appadmm_command_e arg_command)
 	case APPADMM_COMMAND_OTA_SEND_INFORMATION:
 	case APPADMM_COMMAND_OTA_SEND_FIRMWARE_PACKAGE:
 	case APPADMM_COMMAND_OTA_START_UPGRADE_PROCEDURE:
+		/* these respond with APPADMM_FRAME_DATA_SIZE_RESPONSE_SUCCESS
+		 * or APPADMM_FRAME_DATA_SIZE_RESPONSE_FAILURE */
 
-		/* safe default */
 	default:
+		/* safe default */
 		return SR_ERR_DATA;
 	}
 	return SR_ERR_BUG;
@@ -241,10 +241,7 @@ static int appadmm_dec_read_information(const struct sr_tp_appa_packet *arg_pack
 	arg_read_information->model_id = read_u16le_inc(&rdptr);
 	arg_read_information->firmware_version = read_u16le_inc(&rdptr);
 
-	/* Strip spaces from model name */
 	g_strstrip(arg_read_information->model_name);
-
-	/* Strip spaces from serial number */
 	g_strstrip(arg_read_information->serial_number);
 
 	return SR_OK;
@@ -635,22 +632,19 @@ static int appadmm_dec_storage_info(const struct appadmm_response_data_read_memo
 		break;
 	case APPADMM_MODEL_ID_150:
 	case APPADMM_MODEL_ID_150B:
-		/* Capacity of up to 10000 Samples LOG Data
-		 * and 1000 Samples MEM Data
-		 */
 		arg_devc->storage_info[APPADMM_STORAGE_MEM].amount = read_u16be_inc(&rdptr);
 		arg_devc->storage_info[APPADMM_STORAGE_LOG].amount = read_u16be_inc(&rdptr);
 		arg_devc->storage_info[APPADMM_STORAGE_LOG].rate = read_u16be_inc(&rdptr);
 
-		arg_devc->storage_info[APPADMM_STORAGE_MEM].entry_size = 5;
-		arg_devc->storage_info[APPADMM_STORAGE_MEM].entry_count = 1000;
-		arg_devc->storage_info[APPADMM_STORAGE_MEM].mem_offset = 0x40;
-		arg_devc->storage_info[APPADMM_STORAGE_MEM].mem_count = 1;
+		arg_devc->storage_info[APPADMM_STORAGE_MEM].entry_size = APPADMM_STORAGE_150_ENTRY_SIZE;
+		arg_devc->storage_info[APPADMM_STORAGE_MEM].entry_count = APPADMM_STORAGE_150_MEM_ENTRY_COUNT;
+		arg_devc->storage_info[APPADMM_STORAGE_MEM].mem_offset = APPADMM_STORAGE_150_MEM_ADDRESS;
+		arg_devc->storage_info[APPADMM_STORAGE_MEM].mem_count = APPADMM_STORAGE_150_MEM_MEM_COUNT;
 
-		arg_devc->storage_info[APPADMM_STORAGE_LOG].entry_size = 5;
-		arg_devc->storage_info[APPADMM_STORAGE_LOG].entry_count = 9999;
-		arg_devc->storage_info[APPADMM_STORAGE_LOG].mem_offset = 0x1400;
-		arg_devc->storage_info[APPADMM_STORAGE_LOG].mem_count = 1;
+		arg_devc->storage_info[APPADMM_STORAGE_LOG].entry_size = APPADMM_STORAGE_150_ENTRY_SIZE;
+		arg_devc->storage_info[APPADMM_STORAGE_LOG].entry_count = APPADMM_STORAGE_150_LOG_ENTRY_COUNT;
+		arg_devc->storage_info[APPADMM_STORAGE_LOG].mem_offset = APPADMM_STORAGE_150_LOG_ADDRESS;
+		arg_devc->storage_info[APPADMM_STORAGE_LOG].mem_count = APPADMM_STORAGE_150_LOG_MEM_COUNT;
 		break;
 	case APPADMM_MODEL_ID_208:
 	case APPADMM_MODEL_ID_208B:
@@ -661,22 +655,19 @@ static int appadmm_dec_storage_info(const struct appadmm_response_data_read_memo
 	case APPADMM_MODEL_ID_506:
 	case APPADMM_MODEL_ID_506B:
 	case APPADMM_MODEL_ID_506B_2:
-		/* Capacity of 1000 Samples of MEM Data
-		 * and 40000 Samples of LOG data
-		 */
 		arg_devc->storage_info[APPADMM_STORAGE_LOG].rate = read_u16be_inc(&rdptr);
 		arg_devc->storage_info[APPADMM_STORAGE_LOG].amount = read_u16be_inc(&rdptr);
 		arg_devc->storage_info[APPADMM_STORAGE_MEM].amount = read_u16be_inc(&rdptr);
 
-		arg_devc->storage_info[APPADMM_STORAGE_MEM].entry_size = 5;
-		arg_devc->storage_info[APPADMM_STORAGE_MEM].entry_count = 500;
-		arg_devc->storage_info[APPADMM_STORAGE_MEM].mem_offset = 0x500;
-		arg_devc->storage_info[APPADMM_STORAGE_MEM].mem_count = 2;
+		arg_devc->storage_info[APPADMM_STORAGE_MEM].entry_size = APPADMM_STORAGE_200_500_ENTRY_SIZE;
+		arg_devc->storage_info[APPADMM_STORAGE_MEM].entry_count = APPADMM_STORAGE_200_500_MEM_ENTRY_COUNT;
+		arg_devc->storage_info[APPADMM_STORAGE_MEM].mem_offset = APPADMM_STORAGE_200_500_MEM_ADDRESS;
+		arg_devc->storage_info[APPADMM_STORAGE_MEM].mem_count = APPADMM_STORAGE_200_500_MEM_MEM_COUNT;
 
-		arg_devc->storage_info[APPADMM_STORAGE_LOG].entry_size = 5;
-		arg_devc->storage_info[APPADMM_STORAGE_LOG].entry_count = 10000;
-		arg_devc->storage_info[APPADMM_STORAGE_LOG].mem_offset = 0x1000;
-		arg_devc->storage_info[APPADMM_STORAGE_LOG].mem_count = 4;
+		arg_devc->storage_info[APPADMM_STORAGE_LOG].entry_size = APPADMM_STORAGE_200_500_ENTRY_SIZE;
+		arg_devc->storage_info[APPADMM_STORAGE_LOG].entry_count = APPADMM_STORAGE_200_500_LOG_ENTRY_COUNT;
+		arg_devc->storage_info[APPADMM_STORAGE_LOG].mem_offset = APPADMM_STORAGE_200_500_LOG_ADDRESS;
+		arg_devc->storage_info[APPADMM_STORAGE_LOG].mem_count = APPADMM_STORAGE_200_500_LOG_MEM_COUNT;
 		break;
 	case APPADMM_MODEL_ID_S1:
 	case APPADMM_MODEL_ID_S2:
@@ -686,19 +677,17 @@ static int appadmm_dec_storage_info(const struct appadmm_response_data_read_memo
 	case APPADMM_MODEL_ID_175:
 	case APPADMM_MODEL_ID_177:
 	case APPADMM_MODEL_ID_179:
-		/* Capacity of up to 20000 Samples of LOG data, rotating
-		 * metadata to avoid EEPROM write cycles
-		 */
 		for (xloop = 0; xloop < 4; xloop++) {
 			arg_devc->storage_info[APPADMM_STORAGE_LOG].rate = read_u16be_inc(&rdptr);
 			arg_devc->storage_info[APPADMM_STORAGE_LOG].amount = read_u16be_inc(&rdptr);
+			/* rotating metadata to assumably avoid EEPROM write cycles */
 			if (arg_devc->storage_info[APPADMM_STORAGE_LOG].rate != 0xff
 				&& arg_devc->storage_info[APPADMM_STORAGE_LOG].amount != 0xff) {
-				arg_devc->storage_info[APPADMM_STORAGE_LOG].entry_size = 8;
-				arg_devc->storage_info[APPADMM_STORAGE_LOG].entry_count = 4000;
-				arg_devc->storage_info[APPADMM_STORAGE_LOG].mem_offset = 0x8000;
-				arg_devc->storage_info[APPADMM_STORAGE_LOG].mem_count = 1;
-				arg_devc->storage_info[APPADMM_STORAGE_LOG].mem_start = 3;
+				arg_devc->storage_info[APPADMM_STORAGE_LOG].entry_size = APPADMM_STORAGE_170_S_ENTRY_SIZE;
+				arg_devc->storage_info[APPADMM_STORAGE_LOG].entry_count = APPADMM_STORAGE_170_S_LOG_ENTRY_COUNT;
+				arg_devc->storage_info[APPADMM_STORAGE_LOG].mem_offset = APPADMM_STORAGE_170_S_LOG_ADDRESS;
+				arg_devc->storage_info[APPADMM_STORAGE_LOG].mem_count = APPADMM_STORAGE_170_S_LOG_MEM_COUNT;
+				arg_devc->storage_info[APPADMM_STORAGE_LOG].mem_start = APPADMM_STORAGE_170_S_LOG_MEM_START;
 				break;
 			}
 		}
@@ -750,7 +739,7 @@ static int appadmm_enc_read_storage(struct appadmm_request_data_read_memory_s *a
 		arg_read_memory->data_length = arg_entry_count * arg_storage_info->entry_size;
 	} else {
 		/* I don't want to know why I need to do this
-		 * to avoid data to become garbage */
+		 * to avoid data to become garbage, but I can guess... */
 		arg_read_memory->data_length = SR_TP_APPA_MAX_DATA_SIZE;
 	}
 
@@ -807,7 +796,7 @@ static int appadmm_dec_read_storage(const struct appadmm_response_data_read_memo
 		arg_display_data[xloop].data_content = u8 & 0x7f;
 		arg_display_data[xloop].overload = u8 >> 7;
 
-		/* Dump fill bytes on devices that have them */
+		/* Ignore fill bytes on devices that provide them */
 		for (yloop = 0; yloop < arg_storage_info->entry_size - 5;
 			yloop++)
 			read_u8_inc(&rdptr);

@@ -182,22 +182,18 @@ SR_PRIV int sr_tp_appa_send(struct sr_tp_appa_inst *arg_tpai,
 
 	wrptr = &buf[0];
 
-	/* encode packet header */
 	write_u16le_inc(&wrptr, SR_TP_APPA_START_WORD);
 	write_u8_inc(&wrptr, arg_s_packet->command);
 	write_u8_inc(&wrptr, arg_s_packet->length);
 
-	/* copy data */
 	for (dcount = 0; dcount < arg_s_packet->length; dcount++)
 		write_u8_inc(&wrptr, arg_s_packet->data[dcount]);
 
-	/* write checksum */
 	if ((retr = sr_tp_appa_checksum(buf, arg_s_packet->length
 		+ SR_TP_APPA_HEADER_SIZE, &checksum)) < SR_OK)
 		return retr;
 	write_u8_inc(&wrptr, checksum);
 
-	/* transmit packet */
 	dcount = arg_s_packet->length + SR_TP_APPA_HEADER_SIZE + 1;
 	if (arg_is_blocking) {
 		if ((retr = serial_write_blocking(arg_tpai->serial, buf,
@@ -243,7 +239,6 @@ SR_PRIV int sr_tp_appa_receive(struct sr_tp_appa_inst *arg_tpai,
 
 	retr = FALSE;
 
-	/* try to read from serial line */
 	if (arg_is_blocking)
 		len = serial_read_blocking(arg_tpai->serial,
 		buf, sizeof(buf), 50);
@@ -272,19 +267,15 @@ SR_PRIV int sr_tp_appa_receive(struct sr_tp_appa_inst *arg_tpai,
 			}
 		}
 
-		/* add data to buffer */
 		arg_tpai->buffer[arg_tpai->buffer_size++] = buf[xloop];
 
-		/* process data */
 		if (arg_tpai->buffer_size > 4) {
 
-			/* packet complete */
 			if (arg_tpai->buffer[3]
 				+ SR_TP_APPA_HEADER_SIZE
 				+ 1
 				== arg_tpai->buffer_size) {
 
-				/* validate checksum */
 				if ((retr = sr_tp_appa_checksum(arg_tpai->buffer,
 					arg_tpai->buffer[3]
 					+ SR_TP_APPA_HEADER_SIZE, &checksum))
@@ -347,13 +338,11 @@ SR_PRIV int sr_tp_appa_send_receive(struct sr_tp_appa_inst *arg_tpai,
 		|| arg_r_packet == NULL)
 		return SR_ERR_BUG;
 
-	/* send packet */
 	if ((retr = sr_tp_appa_send(arg_tpai, arg_s_packet, TRUE)) < TRUE)
 		return retr;
 
 	retr = FALSE;
 
-	/* wait for response packet in cycles */
 	trycount = SR_TP_APPA_RECEIVE_TIMEOUT / SR_TP_APPA_PACKET_TIMING;
 	while (trycount-- > 0) {
 		retr = sr_tp_appa_receive(arg_tpai, arg_r_packet, TRUE);

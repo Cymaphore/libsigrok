@@ -126,10 +126,8 @@ static GSList *appadmm_scan(struct sr_dev_driver *di, GSList *options)
 	sdi->driver = di;
 	sdi->priv = devc;
 
-	/* APPA-instance for packet handling */
 	sr_tp_appa_init(&devc->appa_inst, serial);
 
-	/* Scan for devices by sendind READ_INFORMATION */
 	appadmm_op_identify(sdi);
 
 	/* If received model is invalid or nothing received, abort */
@@ -155,7 +153,6 @@ static GSList *appadmm_scan(struct sr_dev_driver *di, GSList *options)
 	else
 		devc->rate_interval = APPADMM_RATE_INTERVAL_DEFAULT;
 
-	/* Provide debug output */
 	sr_info("APPA-Device DETECTED; Vendor: %s, Model: %s, OEM-Model: %s, Version: %s, Serial number: %s, Model ID: %i",
 		sdi->vendor,
 		sdi->model,
@@ -164,21 +161,18 @@ static GSList *appadmm_scan(struct sr_dev_driver *di, GSList *options)
 		sdi->serial_num,
 		devc->model_id);
 
-	/* Main reading */
 	channel_primary = sr_channel_new(sdi,
 		APPADMM_CHANNEL_DISPLAY_PRIMARY,
 		SR_CHANNEL_ANALOG,
 		TRUE,
 		appadmm_channel_name(APPADMM_CHANNEL_DISPLAY_PRIMARY));
 
-	/* Sub reading */
 	channel_secondary = sr_channel_new(sdi,
 		APPADMM_CHANNEL_DISPLAY_SECONDARY,
 		SR_CHANNEL_ANALOG,
 		TRUE,
 		appadmm_channel_name(APPADMM_CHANNEL_DISPLAY_SECONDARY));
 
-	/* Other groups are possible (cal data, etc.) */
 	group = g_malloc0(sizeof(*group));
 	group->name = g_strdup("Display");
 	sdi->channel_groups = g_slist_append(sdi->channel_groups, group);
@@ -307,23 +301,19 @@ static int appadmm_acquisition_start(const struct sr_dev_inst *sdi)
 
 	switch (devc->data_source) {
 	case APPADMM_DATA_SOURCE_LIVE:
-		/* Configure limits */
 		sr_sw_limits_acquisition_start(&devc->limits);
 		if ((retr = std_session_send_df_header(sdi)) < SR_OK)
 			return retr;
 
-		/* Start acquisition of live readings */
 		retr = serial_source_add(sdi->session, serial, G_IO_IN, 10,
 			appadmm_acquire_live, (void *) sdi);
 		break;
 
 	case APPADMM_DATA_SOURCE_MEM:
 	case APPADMM_DATA_SOURCE_LOG:
-		/* get storage information */
 		if ((retr = appadmm_op_storage_info(sdi)) < SR_OK)
 			return retr;
 
-		/* Select correct data source */
 		switch (devc->data_source) {
 		case APPADMM_DATA_SOURCE_MEM:
 			storage = APPADMM_STORAGE_MEM;
@@ -335,7 +325,6 @@ static int appadmm_acquisition_start(const struct sr_dev_inst *sdi)
 			return SR_ERR_BUG;
 		}
 
-		/* Reset error counter */
 		devc->error_counter = 0;
 
 		/* Frame limit is used for selecting the amount of data read
@@ -345,17 +334,14 @@ static int appadmm_acquisition_start(const struct sr_dev_inst *sdi)
 			|| devc->limits.limit_frames > (uint64_t) devc->storage_info[storage].amount)
 			devc->limits.limit_frames = devc->storage_info[storage].amount;
 
-		/* Configure limits */
 		sr_sw_limits_acquisition_start(&devc->limits);
 		if ((retr = std_session_send_df_header(sdi)) < SR_OK)
 			return retr;
 
-		/* Configure sample interval */
 		if (devc->storage_info[storage].rate > 0) {
 			sr_session_send_meta(sdi, SR_CONF_SAMPLE_INTERVAL, g_variant_new_uint64(devc->storage_info[storage].rate * 1000));
 		}
 
-		/* Start acquisition */
 		retr = serial_source_add(sdi->session, serial, G_IO_IN, 10,
 			appadmm_acquire_storage, (void *) sdi);
 		break;
