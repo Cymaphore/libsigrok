@@ -457,7 +457,6 @@ static void dump_saved_values(struct context *ctx, GString **out)
 	float *analog_sample, value;
 	uint8_t *logic_sample;
 
-
 	/* If we haven't seen samples we're expecting, skip them. */
 	if ((ctx->num_analog_channels && !ctx->analog_samples) ||
 	    (ctx->num_logic_channels && !ctx->logic_samples)) {
@@ -548,7 +547,8 @@ static void dump_saved_values(struct context *ctx, GString **out)
 					sample_time_u64 = sample_time_dbl;
 					g_string_append_printf(*out, "%" PRIu64 "%s",
 						sample_time_u64, ctx->value);
-				}				break;
+				}
+				break;
 			case TIME_VALUE_NOW_ABS:
 			case TIME_VALUE_NOW_REL:
 				sample_time_dbl = g_get_real_time()
