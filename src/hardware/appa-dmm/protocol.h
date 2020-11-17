@@ -753,7 +753,7 @@ struct appadmm_display_data_s {
  */
 struct appadmm_storage_info_s {
 	int amount; /**< Amount of samples stored */
-	int rate; /**< Sample rate (s) or 0 if not applicable */
+	int interval; /**< Sample interval (s) or 0 if not applicable */
 	int entry_size; /**< Block size of entry in bytes */
 	int entry_count; /**< Amount of entries per memory device */
 	int mem_offset; /**< Memory device address offset (start address) */

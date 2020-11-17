@@ -634,7 +634,7 @@ static int appadmm_dec_storage_info(const struct appadmm_response_data_read_memo
 	case APPADMM_MODEL_ID_150B:
 		arg_devc->storage_info[APPADMM_STORAGE_MEM].amount = read_u16be_inc(&rdptr);
 		arg_devc->storage_info[APPADMM_STORAGE_LOG].amount = read_u16be_inc(&rdptr);
-		arg_devc->storage_info[APPADMM_STORAGE_LOG].rate = read_u16be_inc(&rdptr);
+		arg_devc->storage_info[APPADMM_STORAGE_LOG].interval = read_u16be_inc(&rdptr);
 
 		arg_devc->storage_info[APPADMM_STORAGE_MEM].entry_size = APPADMM_STORAGE_150_ENTRY_SIZE;
 		arg_devc->storage_info[APPADMM_STORAGE_MEM].entry_count = APPADMM_STORAGE_150_MEM_ENTRY_COUNT;
@@ -655,7 +655,7 @@ static int appadmm_dec_storage_info(const struct appadmm_response_data_read_memo
 	case APPADMM_MODEL_ID_506:
 	case APPADMM_MODEL_ID_506B:
 	case APPADMM_MODEL_ID_506B_2:
-		arg_devc->storage_info[APPADMM_STORAGE_LOG].rate = read_u16be_inc(&rdptr);
+		arg_devc->storage_info[APPADMM_STORAGE_LOG].interval = read_u16be_inc(&rdptr);
 		arg_devc->storage_info[APPADMM_STORAGE_LOG].amount = read_u16be_inc(&rdptr);
 		arg_devc->storage_info[APPADMM_STORAGE_MEM].amount = read_u16be_inc(&rdptr);
 
@@ -678,10 +678,10 @@ static int appadmm_dec_storage_info(const struct appadmm_response_data_read_memo
 	case APPADMM_MODEL_ID_177:
 	case APPADMM_MODEL_ID_179:
 		for (xloop = 0; xloop < 4; xloop++) {
-			arg_devc->storage_info[APPADMM_STORAGE_LOG].rate = read_u16be_inc(&rdptr);
+			arg_devc->storage_info[APPADMM_STORAGE_LOG].interval = read_u16be_inc(&rdptr);
 			arg_devc->storage_info[APPADMM_STORAGE_LOG].amount = read_u16be_inc(&rdptr);
 			/* rotating metadata to assumably avoid EEPROM write cycles */
-			if (arg_devc->storage_info[APPADMM_STORAGE_LOG].rate != 0xff
+			if (arg_devc->storage_info[APPADMM_STORAGE_LOG].interval != 0xff
 				&& arg_devc->storage_info[APPADMM_STORAGE_LOG].amount != 0xff) {
 				arg_devc->storage_info[APPADMM_STORAGE_LOG].entry_size = APPADMM_STORAGE_170_S_ENTRY_SIZE;
 				arg_devc->storage_info[APPADMM_STORAGE_LOG].entry_count = APPADMM_STORAGE_170_S_LOG_ENTRY_COUNT;

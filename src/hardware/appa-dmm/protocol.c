@@ -1203,7 +1203,7 @@ SR_PRIV int appadmm_clear_storage_info(struct appadmm_storage_info_s *arg_storag
 
 	for (xloop = 0; xloop < APPADMM_STORAGE_INFO_COUNT; xloop++) {
 		arg_storage_info[xloop].amount = 0;
-		arg_storage_info[xloop].rate = 0;
+		arg_storage_info[xloop].interval = 0;
 		arg_storage_info[xloop].entry_size = 0;
 		arg_storage_info[xloop].entry_count = 0;
 		arg_storage_info[xloop].mem_count = 0;

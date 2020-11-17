@@ -55,6 +55,8 @@ static const uint32_t appadmm_devopts[] = {
 	SR_CONF_LIMIT_SAMPLES | SR_CONF_GET | SR_CONF_SET,
 	SR_CONF_LIMIT_FRAMES | SR_CONF_GET | SR_CONF_SET,
 	SR_CONF_LIMIT_MSEC | SR_CONF_GET | SR_CONF_SET,
+#warning smuview seems broken, fix there first
+	/* SR_CONF_SAMPLE_INTERVAL | SR_CONF_GET | SR_CONF_SET, */
 	SR_CONF_DATA_SOURCE | SR_CONF_GET | SR_CONF_SET | SR_CONF_LIST,
 };
 
@@ -194,6 +196,7 @@ static int appadmm_config_get(uint32_t key, GVariant **data,
 	const struct sr_dev_inst *sdi, const struct sr_channel_group *cg)
 {
 	struct appadmm_context *devc;
+	enum appadmm_storage_e storage;
 
 	(void) cg;
 
@@ -201,6 +204,17 @@ static int appadmm_config_get(uint32_t key, GVariant **data,
 		return SR_ERR_ARG;
 
 	devc = sdi->priv;
+
+	switch (devc->data_source) {
+	case APPADMM_DATA_SOURCE_MEM:
+		storage = APPADMM_STORAGE_MEM;
+		break;
+	case APPADMM_DATA_SOURCE_LOG:
+		storage = APPADMM_STORAGE_LOG;
+		break;
+	default:
+		storage = APPADMM_STORAGE_LOG;
+	}
 
 	switch (key) {
 	case SR_CONF_LIMIT_SAMPLES:
@@ -211,6 +225,16 @@ static int appadmm_config_get(uint32_t key, GVariant **data,
 		return(*data =
 			g_variant_new_string(appadmm_data_sources[devc->data_source]))
 			!= NULL ? SR_OK : SR_ERR_ARG;
+	case SR_CONF_SAMPLE_INTERVAL:
+		if (devc->data_source == APPADMM_DATA_SOURCE_MEM
+			|| devc->data_source == APPADMM_DATA_SOURCE_LOG) {
+			if (devc->storage_info[storage].interval > 0) {
+				return((*data =
+					g_variant_new_uint64(devc->storage_info[storage].interval
+					* 1000)) != NULL ? SR_OK : SR_ERR_ARG);
+			}
+		}
+		return SR_ERR_NA;
 	default:
 		return SR_ERR_NA;
 	}
@@ -337,10 +361,6 @@ static int appadmm_acquisition_start(const struct sr_dev_inst *sdi)
 		sr_sw_limits_acquisition_start(&devc->limits);
 		if ((retr = std_session_send_df_header(sdi)) < SR_OK)
 			return retr;
-
-		if (devc->storage_info[storage].rate > 0) {
-			sr_session_send_meta(sdi, SR_CONF_SAMPLE_INTERVAL, g_variant_new_uint64(devc->storage_info[storage].rate * 1000));
-		}
 
 		retr = serial_source_add(sdi->session, serial, G_IO_IN, 10,
 			appadmm_acquire_storage, (void *) sdi);
